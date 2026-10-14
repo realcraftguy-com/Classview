@@ -1,9 +1,21 @@
 # Architektur
 
-Stand: Phase 1. Dieses Dokument beschreibt *was* gebaut wird und *warum*. Konkrete Bibliotheksversionen
-werden erst in der Phase festgelegt, in der sie eingeführt werden, und dann gegen npm bzw. Maven Central
-geprüft. Wo ich mir bei einer API oder einem Plattformverhalten nicht sicher bin, steht das ausdrücklich
-als **Zu prüfen** dabei.
+Stand: Phase 1, Revision 2 (nach deinem Feedback). Dieses Dokument beschreibt *was* gebaut wird und
+*warum*. Konkrete Bibliotheksversionen werden erst in der Phase festgelegt, in der sie eingeführt werden,
+und dann gegen npm bzw. Maven Central geprüft. Wo ich mir bei einer API oder einem Plattformverhalten nicht
+sicher bin, steht das als **Zu prüfen** dabei; alle Prüfpunkte sind in §12 gesammelt.
+
+### Änderungen gegenüber Revision 1
+
+| Vorher | Jetzt | Grund |
+|---|---|---|
+| Server auf einem VPS (Node.js, Caddy, coturn) | **Host-App auf dem Galaxy S21 FE 5G**, ohne Root | dein Wunsch: kein Server, keine Kosten |
+| Backend in Node.js + TypeScript | Backend in **Kotlin (Ktor)**, als reines JVM-Modul | läuft unverändert in der Host-App *und* zum Entwickeln/Testen auf dem PC; teilt die Protokoll-Klassen mit der Schüler-App |
+| Erreichbar über das Internet | **nur im lokalen Netz** (WLAN oder Hotspot des S21 FE) | ein Handy ist aus dem Internet nicht erreichbar (siehe §5.4) |
+| Let's-Encrypt-Zertifikat | **eigene lokale Zertifizierungsstelle** in der Host-App, einmalig aufs iPad installiert | ohne Domain kein öffentliches Zertifikat |
+| coturn | entfällt; nur Fallback: kleiner STUN-Dienst in der Host-App | Geräte sehen sich im WLAN gegenseitig (deine Antwort 3) |
+| SQLite | JSON-Datei + Bilddateien, atomar geschrieben | gleicher Code auf Android und PC, Datenmenge winzig |
+| Optionaler Verbindungsdienst | **fest eingeplant**, mit eigenem Statusleisten-Symbol | deine Antwort 1 (zum blauen Symbol siehe §9.4) |
 
 ---
 
@@ -11,42 +23,38 @@ als **Zu prüfen** dabei.
 
 ```mermaid
 flowchart LR
-    subgraph IPAD["iPad · Safari"]
-        W["Lehrer-Web-App<br/>React · TypeScript"]
+    subgraph NET["Gleiches WLAN oder Hotspot des S21 FE"]
+        subgraph HOST["Galaxy S21 FE 5G · Host-App"]
+            K["Ktor-Server<br/>HTTPS · WSS"]
+            WA["Web-App-Dateien<br/>(in der APK)"]
+            ST[("JSON-Datei<br/>+ Profilbilder")]
+            CA["Lokale CA<br/>+ Zertifikat"]
+        end
+        subgraph IPAD["iPad · Safari"]
+            W["Lehrer-Web-App"]
+        end
+        subgraph PAD["Xiaomi Pad 7 · Schüler-App"]
+            A["Kotlin · Compose"]
+            M["MediaProjection"]
+        end
     end
 
-    subgraph SRV["Eigener Server"]
-        C["Caddy<br/>HTTPS · WSS · statische Web-App"]
-        B["Backend<br/>Node.js · TypeScript"]
-        D[("SQLite")]
-        T["coturn<br/>STUN / TURN"]
-    end
-
-    subgraph PAD["Xiaomi Pad 7 · Android 15"]
-        A["Schüler-App<br/>Kotlin · Compose"]
-        M["MediaProjection<br/>(System)"]
-    end
-
-    W -->|"HTTPS (REST) + WSS (Events, Signalisierung)"| C
-    A -->|"HTTPS (REST) + WSS (Events, Signalisierung)"| C
-    C --> B
-    B --> D
+    W -->|"https://192.168.x.y:8443 (REST + WSS)"| K
+    A -->|"findet Host per mDNS, dann REST + WSS"| K
+    K --> WA
+    K --> ST
     M -->|"Bildschirm-Frames"| A
-    A -.->|"WebRTC-Video, DTLS-SRTP, direkt (P2P)"| W
-    A -.->|"falls P2P nicht geht"| T
-    T -.->|"Relay"| W
+    A -.->|"WebRTC-Video, DTLS-SRTP, direkt"| W
 ```
 
 **Grundprinzipien**
 
-1. **Backend ist die einzige Autorität** für Klassen, Mitgliedschaften, Anfragen und Sitzungen. Clients
-   schicken Absichten (`share.request`, `share.accept` …), das Backend prüft und verteilt den neuen Zustand.
-2. **Video fließt nie durch das Backend.** Das Backend vermittelt nur die WebRTC-Signalisierung (SDP, ICE).
-   Medien gehen direkt Peer-to-Peer oder, falls nötig, verschlüsselt über coturn. Nichts wird aufgezeichnet.
-3. **Zustimmung ist zweistufig und liegt beim Gerät:** App-Dialog *und* Android-Systemdialog. Das Backend
-   kann einen Stream weder erzwingen noch starten.
-4. **Jede Phase ist lauffähig.** Die Schnittstellen unten sind so geschnitten, dass Phase 3–6 ohne WebRTC
-   funktionieren.
+1. **Der Server ist die einzige Autorität** für Klassen, Mitgliedschaften, Anfragen und Sitzungen.
+   Clients schicken Absichten, der Server prüft und verteilt den neuen Zustand.
+2. **Video fließt nie durch den Server.** Er vermittelt nur die Signalisierung (SDP, ICE). Das Video geht
+   direkt vom Tablet zum iPad, verschlüsselt. Nichts wird aufgezeichnet.
+3. **Zustimmung ist zweistufig und liegt beim Schülergerät:** App-Dialog *und* Android-Systemdialog.
+4. **Jede Phase ist lauffähig.** Der Server läuft ab Phase 3 auch auf dem PC, Phase 3–6 brauchen kein WebRTC.
 
 ---
 
@@ -54,106 +62,182 @@ flowchart LR
 
 | Teil | Wahl | Begründung |
 |---|---|---|
-| Backend-Laufzeit | Node.js (LTS) + TypeScript | wie vorgeschlagen; ein Prozess reicht für den Prototyp |
-| HTTP | **Fastify** | eingebaute Schema-Validierung, schlank, gute TypeScript-Typen |
-| WebSocket | **`ws`** (über `@fastify/websocket`, das auf `ws` aufsetzt) | Statt Socket.IO: Socket.IO hat ein eigenes Protokoll und bräuchte auf Android eine zusätzliche Client-Bibliothek. Mit reinem WebSocket nutzt Android direkt **OkHttp**, der Browser die native `WebSocket`-API. Reconnect und Zustandsabgleich bauen wir ohnehin selbst (siehe §7). |
-| Validierung | `zod` (Nachrichten) bzw. Fastify-JSON-Schema (REST) | Jede eingehende Nachricht wird typgeprüft, bevor sie Logik erreicht |
-| Datenbank | SQLite über **`better-sqlite3`** | synchron, robust, keine Extra-Infrastruktur; Datei liegt in einem Docker-Volume |
-| Bildprüfung | **`sharp`** | dekodiert Profilbilder, prüft Format und Maße und **kodiert neu** (entfernt EXIF/Metadaten, verhindert Polyglot-Dateien) |
-| Tests Backend | Vitest | schnell, TypeScript ohne Zusatzkonfiguration |
-| Lehrer-Web | React + TypeScript + Vite, eigenes CSS mit CSS-Variablen | kein UI-Framework; Hell/Dunkel über `prefers-color-scheme` |
-| Web-Zustand | kleiner eigener Store (`useSyncExternalStore`) | keine Redux-Abhängigkeit nötig |
-| QR-Code (optional) | npm-Paket `qrcode` | rendert lokal im Browser, keine externe API |
-| Android | Kotlin, Jetpack Compose, Material 3, eine Activity, Navigation Compose | |
-| Android-Netzwerk | **OkHttp** (REST + WebSocket), `kotlinx.serialization` | OkHttp bringt WebSocket und Ping-Intervall mit |
-| Android-Speicher | **DataStore** (Preferences) | Profil, gespeicherte Klasse, Geräte-Token |
-| Bildauswahl | Photo Picker (`ActivityResultContracts.PickVisualMedia`) | braucht keine Speicherberechtigung |
-| Android-WebRTC | **`io.getstream:stream-webrtc-android`** (siehe unten) | |
-| TURN | **coturn** mit zeitlich begrenzten Zugangsdaten (`use-auth-secret`) | Standard, selbst hostbar |
-| Reverse Proxy | **Caddy** | automatisches Let's-Encrypt-Zertifikat, WebSocket-Proxy ohne Zusatzkonfiguration; für lokale Tests `tls internal` |
+| Server | **Kotlin + Ktor** (Server-Framework von JetBrains), reines JVM-Modul | siehe §2.1 |
+| HTTP-Engine | Ktor **Netty**-Engine mit TLS | Die CIO-Engine von Ktor kann serverseitig kein TLS. **Zu prüfen in Phase 3** (Spike gleich zu Beginn): Netty mit TLS auf Android. Fallback: CIO auf `127.0.0.1` plus kleiner TLS-Vorschalter mit Androids `SSLServerSocket` in derselben App. |
+| WebSocket | Ktor-WebSockets | Browser nutzt die native `WebSocket`-API, Android **OkHttp** |
+| Serialisierung | **`kotlinx.serialization`** | gemeinsames Modul `protocol` für Server und Schüler-App → beide Seiten benutzen dieselben Nachrichtenklassen |
+| Datenhaltung | Zustand im Speicher, Änderungen sofort als JSON-Datei gespeichert (erst temporäre Datei, dann umbenennen = atomar); Profilbilder als Dateien | Bei ≤ 40 Schülern je Klasse sind das wenige KB. Kein Datenbanktreiber, der sich zwischen Android und PC unterscheidet. Alle Änderungen laufen nacheinander über einen Mutex, damit z. B. „Annehmen“ und „Ablaufen“ nie gleichzeitig passieren. Hinter einer Schnittstelle, später austauschbar gegen SQLite. |
+| Zertifikate | **Bouncy Castle** (`bcpkix`) zum Erzeugen von CA und Server-Zertifikat | Android selbst bietet dafür keine öffentliche API |
+| Bildprüfung | Android `BitmapFactory` (Host) bzw. `javax.imageio` (PC) hinter einer Schnittstelle | dekodieren, Maße prüfen, **neu kodieren** (entfernt EXIF/GPS) |
+| Tests Server | JUnit 5 + Ktor `testApplication` | laufen auf dem PC und in CI, ohne Handy |
+| Lehrer-Web | React + TypeScript + Vite, eigenes CSS mit CSS-Variablen | Build wird in die Host-APK gepackt |
+| Web-Zustand | kleiner eigener Store (`useSyncExternalStore`) | |
+| QR-Code | npm-Paket `qrcode` (Web) bzw. ZXing-Core (Host-App) | Host-App zeigt QR mit der Adresse fürs iPad |
+| Android allgemein | Kotlin, Jetpack Compose, Material 3, eine Activity je App, Navigation Compose | |
+| Android-Netzwerk | **OkHttp** (REST + WebSocket) | |
+| Host-Suche | Android **NSD** (`NsdManager`, mDNS/DNS-SD), Dienst `_classview._tcp` | Schüler-App findet die Host-App automatisch; manuelle IP-Eingabe als Fallback |
+| Android-Speicher | **DataStore** (Preferences) | |
+| Bildauswahl | Photo Picker (`ActivityResultContracts.PickVisualMedia`) | keine Speicherberechtigung nötig |
+| Android-WebRTC | **`io.getstream:stream-webrtc-android`** | siehe §2.2 |
+| APK-Bau | Gradle; zusätzlich **GitHub Actions**, das bei jedem Push beide APKs baut | du kannst die APKs direkt aus GitHub herunterladen und installieren, ohne Android Studio |
 
-### 2.1 WebRTC-Bibliothek für Android
+### 2.1 Warum der Server jetzt in Kotlin ist
 
-Google veröffentlicht seit Jahren kein offizielles, gepflegtes Android-Artefakt mehr (`org.webrtc:google-webrtc`
-ist veraltet und nicht mehr über die üblichen Repositories verfügbar). Selbst bauen ist möglich, kostet aber
-Stunden Build-Zeit und viel Plattenplatz. Realistische Optionen:
+Node.js auf einem nicht gerooteten Handy ginge nur über Termux (keine eigene APK) oder eingebettetes
+Node (`nodejs-mobile`), bei dem native Module wie SQLite- oder Bildbibliotheken für Android
+nachkompiliert werden müssten. Kotlin/Ktor läuft dagegen normal in einer Android-App.
+
+Weil das Server-Modul **keine Android-Abhängigkeiten** hat, läuft derselbe Code
+- in der Host-App auf dem S21 FE,
+- auf dem PC (`./gradlew :backend:server:run`) zum Entwickeln, für automatische Tests und in CI,
+- später bei Bedarf auch auf einem richtigen Server (dann wieder mit Internetzugang).
+
+### 2.2 WebRTC-Bibliothek für Android
+
+Google veröffentlicht kein gepflegtes offizielles Android-Artefakt mehr (`org.webrtc:google-webrtc` ist
+veraltet). Selbst bauen dauert Stunden und braucht viel Platz. Realistische Optionen:
 
 | Option | Bewertung |
 |---|---|
-| **`io.getstream:stream-webrtc-android`** (GetStream, Apache 2.0, Maven Central) | Vorkompiliertes **upstream-libwebrtc** mit der Standard-API `org.webrtc.*` (u. a. `PeerConnectionFactory`, `ScreenCapturerAndroid`, `SurfaceTextureHelper`, Hardware-Encoder-Factories). Regelmäßig an neue Chromium-Releases angepasst. Wir nutzen nur das Basis-Artefakt, nicht deren Video-SDK. → **Wahl** |
-| `io.github.webrtc-sdk:android` (von LiveKit gepflegt) | ebenfalls upstream-libwebrtc mit `org.webrtc.*`-API, gute Alternative |
-| Selbst gebautes libwebrtc | volle Kontrolle, aber für dieses Projekt unverhältnismäßig |
+| **`io.getstream:stream-webrtc-android`** (GetStream, Apache 2.0, Maven Central) | vorkompiliertes Original-libwebrtc mit der Standard-API `org.webrtc.*` (`PeerConnectionFactory`, `ScreenCapturerAndroid`, Hardware-Encoder …), regelmäßig aktualisiert. Wir nutzen nur das Basis-Artefakt. → **Wahl** |
+| `io.github.webrtc-sdk:android` (von LiveKit gepflegt) | gleiche `org.webrtc`-API, gute Alternative |
 
-Weil beide Kandidaten dieselbe `org.webrtc`-API bereitstellen, ist ein späterer Wechsel billig.
-**Zu prüfen in Phase 7:** exakte aktuelle Version auf Maven Central; ob `ScreenCapturerAndroid` in dieser
-Version bei Größenänderung `VirtualDisplay.resize()` nutzt oder das virtuelle Display neu erzeugt (Letzteres
-ist ab Android 14 pro MediaProjection nur einmal erlaubt). Falls nötig schreiben wir einen eigenen schlanken
-Capturer (VirtualDisplay → `SurfaceTextureHelper` → `VideoSource`).
+**Zu prüfen in Phase 7:** aktuelle Version; ob `ScreenCapturerAndroid` bei Größenänderung
+`VirtualDisplay.resize()` nutzt oder das Display neu anlegt (ab Android 14 nur einmal pro MediaProjection
+erlaubt). Notfalls eigener schlanker Capturer (VirtualDisplay → `SurfaceTextureHelper`).
 
-### 2.2 Videoparameter (Startwerte, in Phase 7 messen)
+### 2.3 Videoparameter (Startwerte, in Phase 7 messen)
 
-- Codec: **H.264** bevorzugt (Hardware-Encoder auf dem Snapdragon im Pad 7, Safari dekodiert hardwarebeschleunigt),
-  Fallback VP8 (Software). Safari unterstützt beide.
-- Auflösung: lange Kante max. **1920 px** (Pad 7 hat 3200 × 2136, das wäre unnötig viel), 15–30 fps.
-- `degradationPreference = MAINTAIN_RESOLUTION`: Bei Bandbreitenmangel lieber weniger Bilder pro Sekunde als
-  unlesbarer Text.
-- Nur Video, **kein Audio-Track**. Dadurch darf das `<video>` in Safari `muted` sein und startet ohne
-  Autoplay-Probleme (zusätzlich `playsinline`, Start nach einer Benutzergeste).
+- Codec **H.264** (Hardware-Encoder im Pad 7, Safari dekodiert hardwarebeschleunigt), Fallback VP8.
+- Lange Kante max. **1920 px** (Pad 7: 3200 × 2136), 15–30 fps, `MAINTAIN_RESOLUTION` (lieber weniger
+  Bilder pro Sekunde als unlesbarer Text).
+- Nur Video, **kein Audio-Track** → `<video muted playsinline>` startet in Safari ohne Autoplay-Sperre.
 
 ---
 
-## 3. Komponenten im Detail
+## 3. Repository und Module
 
-### 3.1 Backend
+```
+/                    Gradle-Wurzel für alles in Kotlin
+├─ backend/
+│  ├─ protocol/      REST-/WebSocket-Nachrichten (kotlinx.serialization), reines Kotlin
+│  └─ server/        Ktor-Server, Logik, Rate-Limits, Speicher-Schnittstelle, Tests; PC-Startpunkt
+├─ android/
+│  ├─ app-student/   Schüler-App (Xiaomi Pad 7)            → APK 1
+│  └─ app-host/      Host-App (Galaxy S21 FE), bettet server + Web-App ein → APK 2
+├─ web/              Lehrer-Web-App (React + Vite); Build landet in app-host
+├─ docs/
+└─ .github/workflows Bau beider APKs + Tests
+```
 
-- **REST** für alles, was eine einfache Anfrage/Antwort ist (Klasse erstellen, beitreten, Profilbild hochladen).
-- **WebSocket `/ws`** für Live-Ereignisse und Signalisierung. Nach dem Verbindungsaufbau muss die **erste
-  Nachricht** `hello` mit Token sein, sonst wird nach 5 s geschlossen. (Tokens nicht in die URL, weil URLs in
-  Proxy-Logs landen; der Browser kann bei WebSockets keine eigenen Header setzen.)
-- **In-Memory-Zustand:** welche Verbindungen online sind, Rate-Limit-Zähler, Timer für Anfragen.
-  Dauerhafte Daten (Klassen, Geräte, Anfragen, Sitzungen als Protokoll ohne Inhalte) in SQLite.
-- **Beim Start** werden alle `pending`-Anfragen auf `expired` und alle offenen Sitzungen auf `ended`
-  (`server_restart`) gesetzt → nach einem Neustart gibt es nichts Verwaistes.
-- Ein einzelner Prozess. Horizontale Skalierung ist für den Prototyp bewusst nicht vorgesehen.
+---
 
-### 3.2 Lehrer-Web-App
+## 4. Komponenten im Detail
 
-- Wird von Caddy als statische Dateien ausgeliefert (gleicher Origin wie API → kein CORS nötig).
-- **PWA-Manifest** + `apple-mobile-web-app-capable`, damit sie vom Home-Bildschirm ohne Safari-Leisten startet.
-  Wichtig: Home-Bildschirm-App und Safari-Tab haben **getrennten Speicher** – eine Klasse, die im Tab
-  erstellt wurde, ist in der Home-Bildschirm-App erst nach Öffnen des Wiederherstellungslinks sichtbar.
-- Speichert pro Klasse lokal (`localStorage`): `classId`, Klassenname, Lehrer-Token, Wiederherstellungslink.
-- **Profilbilder** werden per `fetch` mit `Authorization`-Header geladen und als Blob-URL angezeigt (ein
-  normales `<img src>` könnte keinen Header mitsenden; so gibt es keine öffentlichen Bild-URLs).
-- Routen (Hash-basiert, kein Server-Routing nötig): `#/` Start, `#/class/:id` Klasse,
-  `#/class/:id/student/:deviceId` Detail, `#/recover/<token>` Wiederherstellung (Fragment wird nie an den
-  Server übertragen).
+### 4.1 Host-App (Galaxy S21 FE 5G)
 
-### 3.3 Android-App
+Bewusst schlicht – die Klasse wird im iPad verwaltet, nicht hier.
+
+- **Ein Bildschirm:** großer Schalter „Server läuft / gestoppt“, Adresse fürs iPad als Text und QR-Code,
+  Anzahl verbundener Geräte, Kurzanleitung „Zertifikat aufs iPad“, Hinweis zu Samsung-Akkueinstellungen.
+- **`HostService`**: Foreground Service (Typ `specialUse`, für eine nicht über Google Play verteilte App
+  unproblematisch) mit Benachrichtigung „Klassenserver läuft · 192.168.x.y“ und „Stoppen“-Aktion. Er hält
+  - den Ktor-Server (Port **8443** HTTPS/WSS; Ports unter 1024 gehen ohne Root nicht),
+  - einen kleinen HTTP-Port **8080** nur für das Herunterladen des CA-Zertifikats und eine Weiterleitung,
+  - die mDNS-Anmeldung `_classview._tcp` (mit Kurz-Fingerabdruck des Zertifikats im TXT-Eintrag),
+  - einen `PARTIAL_WAKE_LOCK` und einen WLAN-Lock, damit das Handy bei ausgeschaltetem Display erreichbar bleibt.
+- **Web-App** wird beim Bauen aus `/web` erzeugt und in die APK gepackt.
+- **Daten** im App-eigenen Speicher, Backup deaktiviert.
+
+### 4.2 Server (`backend/server`)
+
+- **REST** für Anfrage/Antwort-Fälle, **WebSocket `/ws`** für Live-Ereignisse und Signalisierung.
+- Erste WS-Nachricht muss `hello` mit Token sein, sonst wird nach 5 s geschlossen (Tokens nicht in URLs).
+- Zustand im Speicher, jede Änderung sofort persistiert (siehe §2).
+- **Beim Start** werden offene Anfragen `expired`, offene Sitzungen `ended` (`server_restart`).
+- Rate-Limits im Speicher.
+
+### 4.3 Lehrer-Web-App (iPad, Safari)
+
+- Von der Host-App ausgeliefert (gleicher Origin → kein CORS).
+- PWA-Manifest + `apple-mobile-web-app-capable` → startet vom Home-Bildschirm ohne Safari-Leisten.
+  Home-Bildschirm-App und Safari-Tab haben **getrennten Speicher**.
+- Speichert pro Klasse lokal: `classId`, Name, Lehrer-Token, Wiederherstellungslink.
+- Profilbilder per `fetch` mit `Authorization`-Header → Blob-URL (keine öffentlichen Bild-URLs).
+- Hash-Routen: `#/`, `#/class/:id`, `#/class/:id/student/:deviceId`, `#/recover/<token>`.
+
+### 4.4 Schüler-App (Xiaomi Pad 7)
 
 ```
 MainActivity (Compose, edge-to-edge)
  ├─ Screens: Start · Profil · Beitreten · Beigetreten · Freigabe-Dialog · HyperOS-Hinweis
  ├─ ViewModels (StateFlow)
- ├─ ProfileRepository        – DataStore: Name, Avatar (Preset oder lokale Bilddatei)
- ├─ ClassRepository          – DataStore: Server-URL, classId, deviceId, deviceToken, Klassenname
- ├─ ClassConnection          – OkHttp-WebSocket, Heartbeat, Reconnect mit Backoff, Events als Flow
- ├─ ClassPresenceService     – (Vorschlag, siehe Offene Fragen) Foreground Service „Mit Klasse verbunden“
- └─ ScreenShareService       – Foreground Service, Typ mediaProjection; hält MediaProjection,
-                               PeerConnection und Capturer für genau eine Sitzung
+ ├─ ProfileRepository     – DataStore: Name, Avatar (Preset oder lokale Bilddatei)
+ ├─ ClassRepository       – DataStore: Host-Adresse, CA-Fingerabdruck, classId, deviceId, deviceToken
+ ├─ HostDiscovery         – NsdManager: sucht _classview._tcp im WLAN
+ ├─ ClassConnection       – OkHttp-WebSocket, Heartbeat, Reconnect mit Backoff
+ └─ ClassroomService      – EIN Foreground Service für die ganze Klassenzeit:
+                             · verbunden: Typ specialUse, Notification „Mit Klasse 7b verbunden“
+                             · bei Freigabe: zusätzlich Typ mediaProjection, Notification „Bildschirm
+                               wird geteilt“ mit „Beenden“; hält MediaProjection, Capturer, PeerConnection
 ```
 
-- Server-URL ist im Release-Build fest eingebaut (`BuildConfig`); im Debug-Build in einer versteckten
-  Entwickleroption änderbar (für den WLAN-Test).
-- `minSdk` 29, `targetSdk` 35 (Android 15). **Zu prüfen in Phase 4:** ob für das Pad bereits ein Update auf
-  Android 16 vorliegt; dann testen wir zusätzlich dagegen.
-- Profilbild wird **auf dem Gerät** auf max. 512 px verkleinert und als JPEG (Qualität ~85) hochgeladen.
-- Backups deaktiviert (`allowBackup=false` bzw. `dataExtractionRules`), damit das Geräte-Token nicht in
-  Cloud-Backups landet.
+- Ein gemeinsamer Service statt zwei: nur **ein** Symbol in der Statusleiste, das sein Aussehen wechselt.
+- `minSdk` 29, `targetSdk` 35. Backups deaktiviert.
+- Profilbild wird auf dem Gerät auf max. 512 px verkleinert und als JPEG hochgeladen.
+- Keine Kamera- oder Mikrofonberechtigung (QR-Scannen fällt damit weg; Beitritt nur per Code).
 
 ---
 
-## 4. Datenmodell
+## 5. Netzwerk, Host-Suche und Verschlüsselung
+
+### 5.1 Wie die Geräte sich finden
+
+| Gerät | Wie es die Host-App findet |
+|---|---|
+| Xiaomi Pad 7 | automatisch per mDNS (`NsdManager`). Gibt es mehrere Hosts, wird der genommen, bei dem der Code passt. Fallback: IP-Adresse in den Einstellungen eintippen. Nach dem Beitritt merkt sich die App den Host (Fingerabdruck) und sucht ihn bei IP-Wechsel erneut per mDNS. |
+| iPad | Safari kann nicht per mDNS suchen. Die Host-App zeigt `https://192.168.x.y:8443` als Text und QR-Code (mit der iPad-Kamera scannen öffnet Safari). Tipp: im Router dem S21 FE eine feste IP zuweisen, dann ändert sich die Adresse nie. |
+
+### 5.2 HTTPS ohne Domain: eigene Zertifizierungsstelle
+
+1. Beim ersten Start erzeugt die Host-App eine **eigene CA** (privater Schlüssel verlässt das Handy nie)
+   und damit ein Server-Zertifikat für ihre aktuellen IP-Adressen (WLAN und ggf. Hotspot). Ändert sich die
+   IP, stellt sie automatisch ein neues Server-Zertifikat aus – die CA bleibt gleich.
+2. **iPad, einmalig:** `http://192.168.x.y:8080/ca` öffnen → Profil laden → *Einstellungen → Profil geladen
+   → Installieren* → *Allgemein → Info → Zertifikatsvertrauenseinstellungen* → Vertrauen einschalten.
+   Danach ist alles normales HTTPS ohne Warnungen.
+3. **Schüler-App:** vertraut beim ersten Kontakt der CA, deren Fingerabdruck per mDNS angekündigt wurde,
+   und **merkt ihn sich** („Trust on first use“). Spätere Verbindungen zu einer anderen CA werden abgelehnt.
+   Host-App und Schüler-App zeigen eine kurze Server-Kennung (z. B. `K7-P4`) zum optionalen Vergleichen.
+4. Server-Zertifikate erfüllen Apples Anforderungen (Subject Alternative Name mit IP, Extended Key Usage
+   `serverAuth`, RSA ≥ 2048 oder ECDSA P-256, Laufzeit ≤ 1 Jahr mit automatischer Erneuerung).
+
+Warum der Aufwand: Ohne TLS könnte jeder im selben WLAN Lehrer- und Geräte-Tokens mitlesen. (Das Video
+selbst wäre durch WebRTC trotzdem verschlüsselt.) Ein **reiner HTTP-Modus** existiert nur im
+Debug-Build zum Entwickeln.
+
+### 5.3 WebRTC im lokalen Netz
+
+Du hast bestätigt, dass sich die Geräte im WLAN gegenseitig erreichen. Dann geht das Video direkt
+Tablet → iPad, ein TURN-Server ist nicht nötig. Auch über den **Hotspot des S21 FE** funktioniert das
+(iPad und Tablet hängen dann beide am Handy; lokaler Verkehr verbraucht kein mobiles Datenvolumen).
+
+**Zu prüfen in Phase 7:** Safari verrät ohne Kamera-/Mikrofonfreigabe seine lokale IP nicht als
+ICE-Kandidat. Für einen reinen Empfänger sollte die Verbindung trotzdem zustande kommen (Safari prüft die
+Kandidaten des Tablets, das Tablet lernt Safaris Adresse daraus). Falls nicht: Die Host-App bekommt einen
+**winzigen STUN-Dienst** (UDP 3478, nur „Binding“-Antworten, wenige Dutzend Zeilen). Damit erfährt Safari
+seine eigene WLAN-Adresse und kann sie anbieten.
+
+### 5.4 Grenze: nur im lokalen Netz
+
+Ein Handy im WLAN oder Mobilfunk ist aus dem Internet nicht erreichbar (private IP, Carrier-NAT, keine
+Portfreigabe ohne Router). Alle drei Geräte müssen also **im selben Netz** sein – dasselbe WLAN oder der
+Hotspot des S21 FE. Soll es später übers Internet gehen, kann derselbe Server-Code auf einen kleinen VPS
+umziehen (siehe `hosting-and-costs.md` §5, ca. 5–10 €/Monat).
+
+---
+
+## 6. Datenmodell
 
 ```mermaid
 erDiagram
@@ -166,79 +250,74 @@ erDiagram
 ```
 
 Im Diagramm und im Code heißt `Class` **`SchoolClass`**, weil `class` in Mermaid ein Schlüsselwort ist und
-`Class` in Kotlin mit `java.lang.Class` kollidiert. Alle IDs sind zufällige UUIDv4. Alle Zeitstempel in UTC (ISO 8601 in JSON, Unix-ms in SQLite).
-Geheimnisse werden nur als **SHA-256-Hash** gespeichert (die Tokens haben 256 Bit Zufall, daher ist ein
-langsamer Passwort-Hash nicht nötig).
+`Class` in Kotlin mit `java.lang.Class` kollidiert. Alle IDs sind zufällige UUIDv4, alle Zeitstempel UTC.
+Geheimnisse werden nur als **SHA-256-Hash** gespeichert (256 Bit Zufall, daher kein langsamer
+Passwort-Hash nötig).
 
-### `Class`
-
-| Feld | Typ | Beschreibung |
-|---|---|---|
-| `id` | UUID | interne Klassen-ID |
-| `name` | text (1–60) | Klassenname |
-| `teacherName` | text (0–60), optional | wird dem Schüler bei Anfragen angezeigt |
-| `code` | text(6), unique, nullable | aktueller Beitrittscode; `null` = kein gültiger Code |
-| `codeCreatedAt` | timestamp | |
-| `codeExpiresAt` | timestamp, nullable | optionaler Ablauf (z. B. 1 h / 1 Tag / 7 Tage / nie) |
-| `joinPaused` | bool | Beitritt vorübergehend gesperrt, Code bleibt erhalten |
-| `maxDevices` | int | Standard 40 |
-| `recoveryTokenHash` | text | Hash des Wiederherstellungs-Geheimnisses |
-| `createdAt`, `lastActivityAt` | timestamp | `lastActivityAt` für automatisches Aufräumen inaktiver Klassen |
-
-### `TeacherCredential` (zusätzlich zu den Mindest-Entitäten)
-
-Eine Klasse kann auf mehreren Lehrer-Geräten geöffnet sein (z. B. iPad und Laptop via Wiederherstellungslink).
-Jedes Gerät bekommt ein eigenes Lehrer-Token, damit man einzelne Geräte abmelden kann.
+### `SchoolClass`
 
 | Feld | Typ | Beschreibung |
 |---|---|---|
 | `id` | UUID | |
-| `classId` | UUID → Class | |
-| `tokenHash` | text, unique | |
-| `label` | text | grobe Gerätebeschreibung (z. B. „iPad · Safari“), nur zur Anzeige |
-| `createdAt`, `lastUsedAt` | timestamp | |
-| `revokedAt` | timestamp, nullable | abgemeldet |
+| `name` | Text (1–60) | Klassenname |
+| `teacherName` | Text (0–60), optional | wird dem Schüler bei Anfragen angezeigt |
+| `code` | Text(6), eindeutig, nullable | aktueller Beitrittscode; `null` = kein gültiger Code |
+| `codeCreatedAt`, `codeExpiresAt` | Zeitstempel, Ablauf optional | z. B. 1 h / 1 Tag / 7 Tage / nie |
+| `joinPaused` | bool | Beitritt vorübergehend gesperrt |
+| `maxDevices` | int | Standard 40 |
+| `recoveryTokenHash` | Text | |
+| `createdAt`, `lastActivityAt` | Zeitstempel | für automatisches Aufräumen |
+
+### `TeacherCredential`
+
+Eine Klasse kann auf mehreren Lehrer-Geräten offen sein; jedes hat ein eigenes Token und kann einzeln
+abgemeldet werden.
+
+| Feld | Typ | Beschreibung |
+|---|---|---|
+| `id`, `classId` | UUID | |
+| `tokenHash` | Text, eindeutig | |
+| `label` | Text | z. B. „iPad · Safari“ |
+| `createdAt`, `lastUsedAt`, `revokedAt` | Zeitstempel | |
 
 ### `Device` (Schüler in einer Klasse)
 
 | Feld | Typ | Beschreibung |
 |---|---|---|
-| `id` | UUID | Geräte-ID, Zuordnung **nur** hierüber, nie über den Namen |
-| `classId` | UUID → Class | ein Device-Eintrag gehört zu genau einer Klasse |
-| `tokenHash` | text, unique | Hash des Geräte-Tokens |
-| `displayName` | text (1–40) | |
+| `id` | UUID | Zuordnung **nur** hierüber, nie über den Namen |
+| `classId` | UUID | genau eine Klasse |
+| `tokenHash` | Text, eindeutig | |
+| `displayName` | Text (1–40) | |
 | `avatarKind` | `preset` \| `image` | |
-| `avatarPreset` | text, nullable | Schlüssel eines eingebauten Avatars (eigene Grafiken, in Web und App identisch) |
-| `avatarImage` | blob, nullable | neu kodiertes Bild, max. 512 × 512 |
-| `avatarVersion` | int | wird bei jeder Änderung erhöht (Cache-Invalidierung) |
-| `connection` | `online` \| `offline` | Laufzeitstatus, wird zusätzlich persistiert |
-| `lastSeenAt` | timestamp | letztes Lebenszeichen |
-| `joinedAt` | timestamp | |
-| `removedAt` | timestamp, nullable | von der Lehrerin entfernt oder selbst ausgetreten → Token ungültig |
+| `avatarPreset` | Text, nullable | eingebauter Avatar (eigene Grafiken, in Web und App identisch) |
+| `avatarFile` | Dateiname, nullable | zufälliger Name, neu kodiertes Bild ≤ 512 × 512 |
+| `avatarVersion` | int | wird bei jeder Änderung erhöht |
+| `connection` | `online` \| `offline` | |
+| `lastSeenAt`, `joinedAt` | Zeitstempel | |
+| `removedAt` | Zeitstempel, nullable | entfernt oder ausgetreten → Token ungültig |
 
 ### `ShareRequest`
 
 | Feld | Typ | Beschreibung |
 |---|---|---|
-| `id` | UUID | |
-| `classId`, `deviceId` | UUID | Ziel: genau ein Gerät |
-| `teacherCredentialId` | UUID | wer angefragt hat |
+| `id`, `classId`, `deviceId`, `teacherCredentialId` | UUID | Ziel: genau ein Gerät |
 | `status` | `pending` \| `accepted` \| `denied` \| `expired` \| `cancelled` | |
-| `reason` | text, nullable | z. B. `user_denied`, `system_dialog_cancelled`, `timeout`, `device_offline`, `teacher_cancelled` |
-| `createdAt`, `expiresAt`, `respondedAt` | timestamp | `expiresAt` = `createdAt` + 60 s |
+| `reason` | Text, nullable | `user_denied`, `system_dialog_cancelled`, `timeout`, `device_offline`, `teacher_cancelled` |
+| `createdAt`, `expiresAt`, `respondedAt` | Zeitstempel | `expiresAt` = `createdAt` + 60 s |
 
 ### `StreamSession`
 
 | Feld | Typ | Beschreibung |
 |---|---|---|
 | `id` | UUID | |
-| `shareRequestId` | UUID, unique | jede Sitzung gehört zu genau einer angenommenen Anfrage |
+| `shareRequestId` | UUID, eindeutig | |
 | `classId`, `deviceId`, `teacherCredentialId` | UUID | |
 | `status` | `connecting` \| `active` \| `ended` | |
-| `endReason` | text, nullable | `student_stopped`, `teacher_stopped`, `device_disconnected`, `teacher_disconnected`, `connection_failed`, `projection_stopped`, `connect_timeout`, `device_removed`, `server_restart` |
-| `createdAt`, `startedAt`, `endedAt` | timestamp | |
+| `endReason` | Text, nullable | `student_stopped`, `teacher_stopped`, `device_disconnected`, `teacher_disconnected`, `connection_failed`, `projection_stopped`, `connect_timeout`, `device_removed`, `server_restart` |
+| `createdAt`, `startedAt`, `endedAt` | Zeitstempel | |
 
-Gespeichert werden **nur Metadaten** – nie Bild- oder Videoinhalte.
+Gespeichert werden **nur Metadaten**, nie Bild- oder Videoinhalte. Abgeschlossene Anfragen und Sitzungen
+werden nach 7 Tagen gelöscht.
 
 ### Zustandsautomaten
 
@@ -256,10 +335,8 @@ stateDiagram-v2
     cancelled --> [*]
 ```
 
-Alle Endzustände sind **endgültig**. Das Backend setzt Status nur mit einer bedingten Aktualisierung
-(`UPDATE … SET status = ? WHERE id = ? AND status = 'pending'`). Ein `share.accept` auf eine bereits
-abgelehnte oder abgelaufene Anfrage wird daher immer abgewiesen – eine Ablehnung kann nie nachträglich zur
-Zustimmung werden.
+Alle Endzustände sind **endgültig**: Der Server ändert einen Status nur, wenn er noch `pending` ist (unter
+dem Mutex geprüft). Ein `share.accept` auf eine abgelehnte oder abgelaufene Anfrage wird immer abgewiesen.
 
 ```mermaid
 stateDiagram-v2
@@ -273,273 +350,327 @@ stateDiagram-v2
 
 ---
 
-## 5. Schnittstellen
+## 7. Schnittstellen
 
-### 5.1 REST (`/api`)
+### 7.1 REST (`/api`)
 
 | Methode & Pfad | Auth | Zweck |
 |---|---|---|
+| `GET /api/info` | – | Server-Kennung, Protokollversion (für Host-Suche) |
 | `POST /api/classes` | – (rate-limitiert) | Klasse anlegen → `classId`, `code`, `teacherToken`, `recoveryToken` |
 | `POST /api/classes/recover` | Recovery-Token im Body | neues Lehrer-Token für dieses Gerät |
-| `GET /api/classes/:classId` | Lehrer | kompletter Stand (Klasse, Schüler, offene Anfragen, Sitzung) |
+| `GET /api/classes/:classId` | Lehrer | kompletter Stand |
 | `PATCH /api/classes/:classId` | Lehrer | Name, Lehrkraftname, Ablaufzeit, `joinPaused` |
-| `POST /api/classes/:classId/code` | Lehrer | Code erneuern (alter Code sofort ungültig) |
+| `POST /api/classes/:classId/code` | Lehrer | Code erneuern (alter sofort ungültig) |
 | `POST /api/classes/:classId/recovery` | Lehrer | Wiederherstellungslink erneuern |
-| `GET /api/classes/:classId/teachers` · `DELETE …/teachers/:id` | Lehrer | Lehrer-Geräte anzeigen / abmelden |
+| `GET …/teachers` · `DELETE …/teachers/:id` | Lehrer | Lehrer-Geräte anzeigen / abmelden |
 | `DELETE /api/classes/:classId/devices/:deviceId` | Lehrer | Schüler entfernen |
-| `GET /api/classes/:classId/devices/:deviceId/avatar` | Lehrer | Profilbild (nur mit Token) |
-| `DELETE /api/classes/:classId` | Lehrer | Klasse löschen (inkl. aller Geräte und Bilder) |
+| `GET /api/classes/:classId/devices/:deviceId/avatar` | Lehrer | Profilbild |
+| `DELETE /api/classes/:classId` | Lehrer | Klasse mit allem löschen |
 | `POST /api/join` | – (rate-limitiert) | Code + Name + Avatar-Preset → `deviceId`, `deviceToken`, Klassenname, Lehrkraftname |
 | `PATCH /api/devices/me` | Gerät | Name / Avatar-Preset ändern |
 | `PUT /api/devices/me/avatar` | Gerät | Profilbild hochladen (max. 1 MB, JPEG/PNG/WebP) |
 | `DELETE /api/devices/me` | Gerät | Klasse verlassen |
 
-Auth immer per `Authorization: Bearer <token>`; Lehrer-Token sind an genau eine `classId` gebunden,
-Geräte-Token an genau ein `Device`.
+Auth per `Authorization: Bearer <token>`. Lehrer-Token gehören zu genau einer Klasse, Geräte-Token zu
+genau einem `Device`.
 
-### 5.2 WebSocket-Nachrichten (`/ws`)
+### 7.2 WebSocket-Nachrichten (`/ws`)
 
-Umschlag: `{ "type": "...", "id"?: "<client-msg-id>", "data": { ... } }`. Unbekannte Typen und ungültige
-Daten werden mit `error` beantwortet und nicht verarbeitet.
+Umschlag: `{ "type": "...", "id"?: "...", "data": { ... } }`. Ungültiges wird mit `error` beantwortet.
 
-| Richtung | Typ | Inhalt / Bedeutung |
+| Richtung | Typ | Bedeutung |
 |---|---|---|
 | C → S | `hello` | `{ role: "teacher", classId, token }` oder `{ role: "device", deviceId, token }` |
-| S → C | `welcome` / `error` | Erfolg mit Server-Zeit bzw. Fehlercode (`invalid_token`, `device_removed`, `class_deleted` …) |
+| S → C | `welcome` / `error` | Erfolg bzw. `invalid_token`, `device_removed`, `class_deleted` … |
 | C ↔ S | `ping` / `pong` | Heartbeat alle 10 s |
 | S → Lehrer | `class.snapshot` | vollständiger Stand nach jedem (Re-)Connect |
 | S → Lehrer | `class.updated` | Name, Code, Ablauf, Pause |
-| S → Lehrer | `device.joined` · `device.updated` · `device.left` · `device.removed` | Schülerliste live; `device.updated` auch für online/offline und neues Bild (`avatarVersion`) |
-| S → Gerät | `class.info` · `removed` | Klassenname/Lehrkraft geändert · aus Klasse entfernt |
-| Lehrer → S | `share.request { deviceId }` · `share.cancel { requestId }` | Anfrage stellen / zurückziehen |
+| S → Lehrer | `device.joined` · `device.updated` · `device.left` · `device.removed` | Schülerliste live |
+| S → Gerät | `class.info` · `removed` | |
+| Lehrer → S | `share.request { deviceId }` · `share.cancel { requestId }` | |
 | S → Gerät | `share.requested { requestId, classId, className, teacherName, expiresAt }` | |
-| S → Gerät | `share.closed { requestId, status }` | abgelaufen / zurückgezogen → Dialog schließen |
-| Gerät → S | `share.deny { requestId, reason }` | `user_denied` oder `system_dialog_cancelled` |
-| Gerät → S | `share.accept { requestId }` | erst **nach** bestätigtem Systemdialog |
+| S → Gerät | `share.closed { requestId, status }` | abgelaufen / zurückgezogen |
+| Gerät → S | `share.deny { requestId, reason }` · `share.accept { requestId }` | `accept` erst **nach** bestätigtem Systemdialog |
 | S → Lehrer | `share.updated { requestId, deviceId, status, reason }` | |
-| S → beide | `stream.start { sessionId, iceServers }` | inkl. kurzlebiger TURN-Zugangsdaten |
-| beide → S → anderer | `rtc.offer` · `rtc.answer` · `rtc.ice { sessionId, … }` | Gerät ist Offerer (es hat den Video-Track), Safari antwortet `recvonly` |
-| beide → S | `stream.state { sessionId, state }` | `connected` / `failed` aus WebRTC-Sicht |
-| beide → S | `stream.stop { sessionId }` | Beenden |
-| S → beide | `stream.updated { sessionId, status }` · `stream.ended { sessionId, reason }` | |
+| S → beide | `stream.start { sessionId, iceServers }` | `iceServers` leer oder lokaler STUN |
+| beide ↔ S | `rtc.offer` · `rtc.answer` · `rtc.ice` | Tablet ist Offerer, Safari antwortet `recvonly` |
+| beide → S | `stream.state` · `stream.stop` | |
+| S → beide | `stream.updated` · `stream.ended { reason }` | |
+| S → Lehrer | `stream.content { visible }` | geteilte App gerade (nicht) sichtbar |
 
-Das Backend leitet `rtc.*` **nur** weiter, wenn `sessionId` zu einer nicht beendeten Sitzung gehört und
-Absender und Empfänger genau die beiden Teilnehmer dieser Sitzung sind.
+`rtc.*` wird nur zwischen den zwei Teilnehmern einer offenen Sitzung weitergeleitet.
 
 ---
 
-## 6. Abläufe
+## 8. Abläufe
 
-### 6.1 Klasse erstellen und beitreten
+### 8.1 Einmalige Einrichtung
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant L as Lehrer-Web (Safari)
-    participant B as Backend
-    participant S as Schüler-App
+    participant H as Host-App (S21 FE)
+    participant L as iPad
+    participant S as Schüler-App (Pad 7)
 
-    L->>B: POST /api/classes {name, teacherName}
-    B-->>L: classId, code, teacherToken, recoveryToken
-    Note over L: Token + Wiederherstellungslink lokal speichern
-    L->>B: WS hello {role: teacher, classId, token}
-    B-->>L: welcome + class.snapshot
-
-    S->>B: POST /api/join {code, displayName, avatarPreset}
-    Note over B: Rate-Limit pro IP und Code<br/>Code gültig, nicht abgelaufen, nicht pausiert?<br/>Klasse nicht voll?
-    B-->>S: deviceId, deviceToken, className, teacherName
-    Note over S: deviceId + Token in DataStore
-    opt eigenes Profilbild
-        S->>B: PUT /api/devices/me/avatar (≤ 512 px)
-        Note over B: sharp: Format/Maße prüfen, neu kodieren
-    end
-    S->>B: WS hello {role: device, deviceId, token}
-    B-->>S: welcome + class.info
-    B-->>L: device.joined {deviceId, name, avatarVersion, online}
-    L->>B: GET …/devices/:id/avatar (Bearer teacherToken)
-    B-->>L: Bild → Blob-URL → Karte erscheint ohne Neuladen
+    H->>H: Server starten, CA + Zertifikat erzeugen,<br/>mDNS _classview._tcp anmelden
+    H-->>L: QR-Code / Adresse anzeigen
+    L->>H: http://IP:8080/ca → Profil laden
+    Note over L: Profil installieren,<br/>Zertifikat voll vertrauen
+    L->>H: https://IP:8443 öffnen, zum Home-Bildschirm hinzufügen
+    S->>S: HyperOS-Hinweise abarbeiten (Autostart, Akku, Benachrichtigungen)
 ```
 
-Beim nächsten App-Start verbindet sich die App direkt mit `deviceId` + `deviceToken` – **ohne Code**.
-Darum betrifft „Code erneuern“ bereits beigetretene Schüler nicht.
-
-### 6.2 Freigabe anfragen
+### 8.2 Klasse erstellen und beitreten
 
 ```mermaid
 sequenceDiagram
     autonumber
     participant L as Lehrer-Web (Safari)
-    participant B as Backend
+    participant H as Server (Host-App)
+    participant S as Schüler-App
+
+    L->>H: POST /api/classes {name, teacherName}
+    H-->>L: classId, code, teacherToken, recoveryToken
+    L->>H: WS hello {role: teacher, classId, token}
+    H-->>L: welcome + class.snapshot
+
+    S->>S: Host per mDNS suchen
+    S->>H: GET /api/info (Zertifikat prüfen bzw. erstmals merken)
+    S->>H: POST /api/join {code, displayName, avatarPreset}
+    Note over H: Rate-Limit pro IP und Code<br/>Code gültig, nicht abgelaufen, nicht pausiert?<br/>Klasse nicht voll?
+    H-->>S: deviceId, deviceToken, className, teacherName
+    opt eigenes Profilbild
+        S->>H: PUT /api/devices/me/avatar (≤ 512 px)
+    end
+    S->>S: ClassroomService starten (Symbol in der Statusleiste)
+    S->>H: WS hello {role: device, deviceId, token}
+    H-->>S: welcome + class.info
+    H-->>L: device.joined
+    L->>H: GET …/avatar (Bearer teacherToken)
+    Note over L: Karte erscheint ohne Neuladen
+```
+
+Danach verbindet sich die App immer mit `deviceId` + `deviceToken`, **ohne Code**. „Code erneuern“
+betrifft beigetretene Schüler deshalb nicht.
+
+### 8.3 Freigabe anfragen
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant L as Lehrer-Web (Safari)
+    participant H as Server (Host-App)
     participant S as Schüler-App
     participant A as Android-System
 
-    L->>B: share.request {deviceId}
-    Note over B: Lehrer-Token gehört zur Klasse?<br/>Gerät gehört zur Klasse und ist online?<br/>keine andere offene Anfrage / Sitzung?
-    B-->>L: share.updated {pending}
-    B->>S: share.requested {requestId, classId, className, teacherName, expiresAt}
-    Note over S: classId == aktuell verbundene Klasse?<br/>sonst still verwerfen
+    L->>H: share.request {deviceId}
+    Note over H: Lehrer-Token gehört zur Klasse?<br/>Gerät gehört zur Klasse und ist online?<br/>keine andere offene Anfrage / Sitzung?
+    H-->>L: share.updated {pending}
+    H->>S: share.requested {requestId, classId, className, teacherName, expiresAt}
+    Note over S: classId == aktuelle Klasse? sonst verwerfen
     S->>S: Dialog (Vordergrund) oder Benachrichtigung (Hintergrund)
 
     alt Verweigern
-        S->>B: share.deny {reason: user_denied}
-        B-->>L: share.updated {denied}
+        S->>H: share.deny {user_denied}
+        H-->>L: share.updated {denied}
     else 60 s keine Antwort
-        B->>S: share.closed {expired}
-        B-->>L: share.updated {expired}
+        H->>S: share.closed {expired}
+        H-->>L: share.updated {expired}
     else Erlauben
         S->>A: createScreenCaptureIntent()
         alt Abbruch im Systemdialog
             A-->>S: RESULT_CANCELED
-            S->>B: share.deny {reason: system_dialog_cancelled}
-            B-->>L: share.updated {denied}
+            S->>H: share.deny {system_dialog_cancelled}
+            H-->>L: share.updated {denied}
         else Bestätigt (ganzer Bildschirm oder eine App)
             A-->>S: RESULT_OK + Intent
-            S->>S: ScreenShareService starten (Typ mediaProjection)
-            S->>B: share.accept {requestId}
-            Note over B: nur wenn noch pending,<br/>sonst Fehler → App stoppt Service sofort
-            B-->>L: share.updated {accepted}
-            B->>S: stream.start {sessionId, iceServers}
-            B->>L: stream.start {sessionId, iceServers}
-            S->>B: rtc.offer
-            B->>L: rtc.offer
-            L->>B: rtc.answer
-            B->>S: rtc.answer
-            Note over S,L: rtc.ice in beide Richtungen über das Backend
-            S-->>L: Video (DTLS-SRTP), direkt oder über TURN
-            L->>B: stream.state {connected}
-            B-->>L: stream.updated {active}
-            B-->>S: stream.updated {active}
+            S->>S: ClassroomService um Typ mediaProjection erweitern
+            S->>H: share.accept {requestId}
+            Note over H: nur wenn noch pending,<br/>sonst Fehler → App stoppt Aufnahme sofort
+            H-->>L: share.updated {accepted}
+            H->>S: stream.start {sessionId}
+            H->>L: stream.start {sessionId}
+            S->>H: rtc.offer
+            H->>L: rtc.offer
+            L->>H: rtc.answer
+            H->>S: rtc.answer
+            Note over S,L: rtc.ice in beide Richtungen über den Server
+            S-->>L: Video (DTLS-SRTP), direkt im WLAN
+            L->>H: stream.state {connected}
+            H-->>L: stream.updated {active}
+            H-->>S: stream.updated {active}
         end
     end
 ```
 
-Während der Systemdialog offen ist, läuft die 60-s-Frist weiter. Erhält das Gerät nach Bestätigung auf
-`share.accept` einen Fehler (z. B. abgelaufen), beendet es die MediaProjection sofort; es entsteht kein Stream.
+Die 60-s-Frist läuft auch während des Systemdialogs weiter.
 
-### 6.3 Stream beenden
+### 8.4 Stream beenden
 
 ```mermaid
 sequenceDiagram
     autonumber
     participant L as Lehrer-Web (Safari)
-    participant B as Backend
+    participant H as Server (Host-App)
     participant S as Schüler-App
 
-    alt Schüler tippt „Freigabe beenden“ (oder stoppt über Android-Statusleiste)
-        S->>S: Capturer + PeerConnection schließen,<br/>MediaProjection.stop(), Service beenden
-        S->>B: stream.stop
-        B->>L: stream.ended {student_stopped}
+    alt Schüler tippt „Freigabe beenden“ oder stoppt über Android
+        S->>S: Capturer + PeerConnection schließen,<br/>MediaProjection.stop()
+        S->>H: stream.stop
+        H->>L: stream.ended {student_stopped}
     else Lehrerin tippt „Beenden“
-        L->>B: stream.stop
-        B->>S: stream.ended {teacher_stopped}
-        S->>S: alles schließen, Service beenden
+        L->>H: stream.stop
+        H->>S: stream.ended {teacher_stopped}
+        S->>S: alles schließen
     else Verbindungsverlust einer Seite
-        Note over B: WS geschlossen oder 30 s kein Heartbeat
-        B->>S: stream.ended {teacher_disconnected}
-        B->>L: stream.ended {device_disconnected}
+        Note over H: WS geschlossen oder 30 s kein Heartbeat
+        H->>S: stream.ended {teacher_disconnected}
+        H->>L: stream.ended {device_disconnected}
     end
-    Note over L,S: Zusätzlich beendet jede Seite lokal,<br/>wenn WebRTC „failed“ meldet oder länger als 5 s „disconnected“ ist
+    Note over L,S: Zusätzlich beendet jede Seite lokal bei WebRTC „failed“<br/>oder wenn die Verbindung länger als 5 s „disconnected“ ist
 ```
+
+Wird die **Host-App** beendet oder verliert das S21 FE das WLAN, enden alle Streams auf beiden Seiten
+(beide verlieren den WebSocket).
 
 ---
 
-## 7. Echtzeit und Zuverlässigkeit
+## 9. Schüler-App: Android-Besonderheiten
+
+### 9.1 Bildschirmaufnahme
+
+1. `MediaProjectionManager.createScreenCaptureIntent()` aus der Activity, **ohne** vorgegebene Konfiguration
+   → Nutzer wählt **ganzen Bildschirm oder eine einzelne App**.
+2. Bei `RESULT_OK`: `ClassroomService.startForeground(…, SPECIAL_USE | MEDIA_PROJECTION)`.
+3. Erst danach `getMediaProjection()`, Callback registrieren, genau einmal `createVirtualDisplay`.
+
+- **Einwilligung pro Sitzung:** Der Ergebnis-Intent wird nie gespeichert oder wiederverwendet.
+- **Einzelne App:** `onCapturedContentResize(w, h)` passt die Größe an,
+  `onCapturedContentVisibilityChanged(visible)` meldet der Lehrerin „geteilte App gerade nicht sichtbar“.
+- **`onStop()`** (Stopp über System, Sperren …) → Sitzung `ended` (`projection_stopped`).
+- **Drehung:** `VirtualDisplay.resize()` bei Konfigurationsänderung.
+- **Manifest:** `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_MEDIA_PROJECTION`,
+  `FOREGROUND_SERVICE_SPECIAL_USE`, `POST_NOTIFICATIONS`, `INTERNET`, `ACCESS_NETWORK_STATE`,
+  `CHANGE_WIFI_MULTICAST_STATE` (für mDNS). **Keine** Kamera, **kein** Mikrofon.
+
+### 9.2 Anfragen im Hintergrund
+
+- Durch den `ClassroomService` bleibt die Verbindung auch im Hintergrund bestehen.
+- Kanal „Freigabe-Anfragen“ mit `IMPORTANCE_HIGH` (Heads-up).
+- **„Verweigern“** direkt in der Benachrichtigung. **„Erlauben“** öffnet die App, die sofort den
+  Systemdialog zeigt – der muss aus einer sichtbaren Activity kommen.
+- Kein Full-Screen-Intent (ab Android 14 Wecker- und Telefonie-Apps vorbehalten).
+
+### 9.3 HyperOS
+
+HyperOS beendet Hintergrund-Apps aggressiv und unterdrückt oft Heads-up-Benachrichtigungen.
+Einstellungen (Menünamen variieren je HyperOS-Version, ich prüfe sie in Phase 4):
+
+1. **Autostart** erlauben (Einstellungen → Apps → App verwalten → ClassroomView).
+2. **Akku-Sparmodus** der App: **„Keine Einschränkungen“**.
+3. Benachrichtigungen: „Schwebende Benachrichtigungen“ und Sperrbildschirm für „Freigabe-Anfragen“ erlauben.
+4. App in der Übersicht der letzten Apps **sperren** (Karte gedrückt halten → Schloss).
+5. Damit das Statusleisten-Symbol sichtbar ist: *Einstellungen → Benachrichtigungen & Kontrollzentrum →
+   Statusleiste → Benachrichtigungssymbole anzeigen* (HyperOS blendet sie teils standardmäßig aus).
+
+Die App zeigt einen Hinweis-Screen mit diesen Schritten und springt, wo öffentlich möglich, direkt in die
+Einstellungen.
+
+### 9.4 Das Symbol in der Statusleiste („blau wie bei Apple“)
+
+Ehrliche Einordnung:
+
+- Der **rechte** Bereich der Statusleiste (Bluetooth, WLAN, Akku) ist dem System vorbehalten. Apps können
+  dort unter Android **kein** eigenes Symbol ablegen – ohne Root geht das nicht.
+- Apps erscheinen **links** in der Statusleiste mit dem kleinen Symbol ihrer laufenden Benachrichtigung.
+  Diese Symbole färbt Android/HyperOS **einheitlich** (weiß bzw. dunkel). Eine eigene Farbe wie Blau
+  übernimmt die Statusleiste nicht.
+
+Was ich daher umsetze:
+
+| Wo | Was |
+|---|---|
+| Statusleiste (links) | eigenes, gut erkennbares Klassen-Symbol, solange du verbunden bist; während der Freigabe wechselt es auf ein Bildschirm-Symbol |
+| Benachrichtigungsleiste | dauerhafte Benachrichtigung „Mit Klasse 7b verbunden“, **blau eingefärbt** (`setColorized`, bei Foreground Services erlaubt; ob HyperOS die Einfärbung anzeigt, **prüfe ich am Gerät**) |
+| In der App | blaue „Verbunden“-Kapsel oben, während der Freigabe deutlich als „Bildschirm wird geteilt“ |
+| System | Android zeigt während der Aufnahme zusätzlich seinen eigenen Hinweis, den wir nicht beeinflussen |
+
+### 9.5 Layout
+
+Window-Size-Classes, Hoch- und Querformat, Zustand in ViewModels. Edge-to-Edge (Pflicht bei
+`targetSdk 35`).
+
+---
+
+## 10. Host-App: Samsung-Besonderheiten (S21 FE)
+
+Samsungs One UI beendet Hintergrund-Apps ebenfalls gern. Die Host-App läuft als Foreground Service mit
+Wake- und WLAN-Lock. Zusätzlich (Menünamen je nach One-UI-Version leicht anders):
+
+1. *Einstellungen → Apps → ClassroomView Host → Akku* → **„Nicht eingeschränkt“**.
+2. *Akku → Hintergrundnutzungslimits* → Host-App zu **„Nie schlafende Apps“** hinzufügen;
+   „Nicht verwendete Apps in Standby versetzen“ ggf. ausschalten.
+3. Während des Unterrichts **ans Ladegerät** – dann greift der Android-Tiefschlaf (Doze) gar nicht.
+4. Optional: Hotspot des S21 FE einschalten und iPad + Tablet damit verbinden – dann ist man vom
+   Schul-/Heim-WLAN unabhängig.
+
+Die Host-App zeigt diese Hinweise und fragt die Ausnahme von der Akku-Optimierung an
+(`ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`).
+
+---
+
+## 11. Echtzeit und Zuverlässigkeit
 
 | Thema | Umsetzung |
 |---|---|
-| Heartbeat | Client sendet alle 10 s `ping`, Server antwortet `pong`. Server: 30 s ohne Nachricht → Verbindung schließen, Gerät `offline`. Client: 25 s ohne `pong` → neu verbinden. |
-| Reconnect | Exponentielles Backoff mit Zufallsanteil: 1 s, 2 s, 4 s … max. 30 s. Android zusätzlich sofort bei `ConnectivityManager`-Netzwechsel, Web bei `online`- und `visibilitychange`-Events. |
-| Vollständiger Abgleich | Nach jedem Lehrer-Reconnect sendet der Server `class.snapshot`; die Web-App ersetzt ihren Zustand komplett statt ihn zu patchen. |
-| Keine Doppelkarten | Karten sind nach `deviceId` geschlüsselt. Pro Gerät gilt nur die neueste WS-Verbindung, ältere werden geschlossen. |
-| Keine hängenden Anfragen | Server-Timer pro Anfrage (60 s); Gerät offline → Anfrage `expired` (`device_offline`); Lehrerverbindung weg → offene Anfragen `cancelled`. |
-| Keine verwaisten Streams | Sitzung endet bei `stream.stop`, bei Verbindungsverlust einer Seite, bei WebRTC `failed`, nach 20 s in `connecting`, wenn MediaProjection vom System gestoppt wird, beim Entfernen des Schülers und beim Serverneustart. Pro Klasse max. **eine** Sitzung (`connecting` oder `active`) – in Phase 9 ggf. vier. |
-| „Sofort“ | Bei sauberem Beenden oder geschlossenem Socket im Bereich unter einer Sekunde. Bei hartem Netzverlust (WLAN weg) wird das über WebRTC (wenige Sekunden) bzw. Heartbeat (max. 30 s) erkannt – schneller geht es ohne Lebenszeichen technisch nicht. |
+| Heartbeat | Client sendet alle 10 s `ping`. Server: 30 s ohne Nachricht → `offline`, Verbindung zu. Client: 25 s ohne `pong` → neu verbinden. |
+| Reconnect | Backoff mit Zufallsanteil 1 s, 2 s, 4 s … max. 30 s; sofort bei Netzwechsel (Android) bzw. `online`/`visibilitychange` (Web). Schüler-App sucht bei Fehlschlag per mDNS neu (IP könnte sich geändert haben). |
+| Vollständiger Abgleich | nach jedem Lehrer-Reconnect `class.snapshot`; die Web-App ersetzt ihren Zustand komplett |
+| Keine Doppelkarten | Karten nach `deviceId`; pro Gerät gilt nur die neueste Verbindung |
+| Keine hängenden Anfragen | Timer 60 s; Gerät offline → `expired`; Lehrerverbindung weg → `cancelled` |
+| Keine verwaisten Streams | Ende bei `stream.stop`, Verbindungsverlust einer Seite, WebRTC `failed`, 20 s in `connecting`, MediaProjection-Stopp, Entfernen des Schülers, Server-Neustart. Max. **eine** Sitzung je Klasse bis Phase 9. |
+| „Sofort“ | sauberes Beenden < 1 s; harter Netzverlust über WebRTC in wenigen Sekunden bzw. Heartbeat max. 30 s |
 
 ---
 
-## 8. Android-Besonderheiten
+## 12. Design-Leitlinien (Details in Phase 2)
 
-### 8.1 Bildschirmaufnahme
-
-- **Reihenfolge** (Android 14+ verlangt das so):
-  1. `MediaProjectionManager.createScreenCaptureIntent()` aus der Activity starten
-     (ohne vorgegebene `MediaProjectionConfig` → Nutzer kann **ganzen Bildschirm oder eine einzelne App** wählen).
-  2. Bei `RESULT_OK`: `ScreenShareService` per `startForegroundService` starten und darin
-     `startForeground(…, FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)` aufrufen.
-  3. Erst danach `getMediaProjection(resultCode, data)`, **Callback registrieren**, dann genau einmal
-     `createVirtualDisplay`.
-- **Einwilligung pro Sitzung:** Der Ergebnis-Intent wird nach einer Sitzung verworfen und nie wiederverwendet.
-  Jede neue Freigabe zeigt den Systemdialog erneut.
-- **Einzelne App teilen** (Android 14+): Über `MediaProjection.Callback.onCapturedContentResize(w, h)` passen
-  wir Seitenverhältnis/Größe an, über `onCapturedContentVisibilityChanged(visible)` melden wir der Lehrerin
-  „Geteilte App ist gerade nicht sichtbar“ statt eines schwarzen Bildes ohne Erklärung.
-- **`onStop()`** (Nutzer beendet über Statusleiste/System, Bildschirm gesperrt o. Ä.) → Sitzung `ended`
-  mit `projection_stopped`. **Zu prüfen in Phase 7:** wie sich Android 15 / HyperOS beim Sperren des
-  Bildschirms während einer Aufnahme genau verhält.
-- **Manifest:** `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_MEDIA_PROJECTION`, `POST_NOTIFICATIONS`
-  (Laufzeitabfrage ab Android 13), `INTERNET`; Service mit `android:foregroundServiceType="mediaProjection"`.
-  **Keine** Kamera- oder Mikrofonberechtigung.
-- **Drehung:** Im Ganzer-Bildschirm-Modus passt das virtuelle Display seine Größe bei Drehung nicht von selbst
-  an. Wir reagieren auf Konfigurationsänderungen mit `VirtualDisplay.resize()` (siehe Prüfpunkt in §2.1).
-
-### 8.2 Anfragen im Hintergrund
-
-- Eigener Benachrichtigungskanal „Freigabe-Anfragen“ mit `IMPORTANCE_HIGH` (Heads-up).
-- Aktion **„Verweigern“** direkt in der Benachrichtigung (BroadcastReceiver, kein UI nötig).
-- **„Erlauben“** öffnet die App (Activity-PendingIntent), dort wird sofort der Systemdialog gestartet.
-  Der Systemdialog *muss* aus einer Activity kommen; aus dem Hintergrund geht das nicht – das ist gewollt.
-- Kein Full-Screen-Intent: Ab Android 14 ist diese Berechtigung Wecker- und Telefonie-Apps vorbehalten.
-- Die Benachrichtigung wird bei `share.closed` (abgelaufen/zurückgezogen) entfernt.
-- Damit überhaupt eine Anfrage ankommt, muss die WebSocket-Verbindung im Hintergrund leben. Ohne
-  Foreground Service wird sie von Android (Doze) und besonders HyperOS nach kurzer Zeit gekappt. Vorschlag:
-  `ClassPresenceService` als Foreground Service mit dauerhafter, ruhiger Benachrichtigung
-  „Mit Klasse ‚…‘ verbunden“, solange man in einer Klasse ist – **siehe Offene Fragen**. Ohne ihn erreichen
-  Anfragen die App nur zuverlässig, solange sie im Vordergrund ist. Push über Firebase (FCM) wäre eine
-  Alternative, hängt aber von Google-Diensten ab und widerspricht dem Selbst-Hosten.
-
-### 8.3 HyperOS
-
-HyperOS beendet Hintergrund-Apps und unterdrückt Heads-up-Benachrichtigungen fremder Apps oft standardmäßig.
-Nötige Einstellungen (Menünamen variieren je nach HyperOS-Version, ich prüfe sie in Phase 4 am Gerät):
-
-1. **Autostart** für ClassroomView erlauben (Einstellungen → Apps → App verwalten → ClassroomView).
-2. **Akku-Sparmodus** der App auf **„Keine Einschränkungen“**.
-3. **Benachrichtigungen:** Kanal „Freigabe-Anfragen“ – „Schwebende Benachrichtigungen“ und Sperrbildschirm erlauben.
-4. App in der **Übersicht der letzten Apps sperren** (Karte gedrückt halten → Schloss).
-
-Die App zeigt beim ersten Beitritt einen Hinweis-Screen mit diesen Schritten und Knöpfen, die – soweit
-öffentlich möglich – direkt in die Einstellungen springen (`ACTION_APPLICATION_DETAILS_SETTINGS`,
-`ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`). Xiaomi-interne Autostart-Activities sind nicht dokumentiert;
-wir nutzen sie höchstens als Versuch mit sauberem Fallback.
-
-### 8.4 Layout
-
-Compose mit Window-Size-Classes, Hoch- und Querformat ohne Neustart der Activity-Logik (Zustand in
-ViewModels). Android 15 erzwingt Edge-to-Edge bei `targetSdk 35` → Insets werden überall berücksichtigt.
+- Ruhig, viel Weißraum, Systemschrift (`-apple-system, system-ui` im Web).
+- Abgerundete Karten (≈ 16 px), runde Avatare, dezente Schatten, kleine Statuspunkte (online grün,
+  offline grau, Freigabe aktiv = Akzentblau mit Bildschirm-Symbol).
+- Eine gedeckte **blaue** Akzentfarbe in allen drei Oberflächen; keine Verläufe, keine Neonfarben;
+  Hell- und Dunkelmodus.
+- Touch-Ziele ≥ 44 pt (iPad) bzw. 48 dp (Android).
+- Code groß in Monospace, gruppiert `K7P·4XM`; Eingabe mit oder ohne Trennzeichen.
+- Eigene, einfache Avatar-Grafiken aus einer gemeinsamen SVG-Quelle.
 
 ---
 
-## 9. Design-Leitlinien (Details in Phase 2)
+## 13. Risiken und Prüfpunkte
 
-- Ruhig, viel Weißraum, Systemschrift (`-apple-system, system-ui` im Web; Roboto/Systemschrift auf Android).
-- Abgerundete Karten (≈ 16 px Radius), runde Avatare, dezente Schatten, kleine farbige Statuspunkte
-  (online = Grün, offline = Grau, Freigabe aktiv = Akzentfarbe mit Bildschirm-Symbol).
-- Eine einzige, gedeckte Akzentfarbe; keine Verläufe, keine Neonfarben; Hell- und Dunkelmodus.
-- Touch-Ziele mindestens 44 × 44 pt (iPad) bzw. 48 × 48 dp (Android).
-- Klassencode in großer, gut lesbarer Monospace-Darstellung, gruppiert `K7P·4XM`; Eingabe akzeptiert mit
-  und ohne Trennzeichen.
-- Eigene, einfache Avatar-Grafiken (geometrisch/Tiere), in Web und App aus derselben SVG-Quelle.
+| Phase | Prüfpunkt | Plan B |
+|---|---|---|
+| 3 (zu Beginn) | Ktor-Netty mit TLS läuft auf Android | CIO lokal + eigener TLS-Vorschalter mit `SSLServerSocket` |
+| 3 | iPad akzeptiert das selbst erzeugte Zertifikat nach Profil-Installation | Zertifikatsfelder anpassen; notfalls HTTP-Modus mit klarer Warnung |
+| 4 | HyperOS-Menünamen, Benachrichtigungssymbole, `setColorized` | Hinweise anpassen |
+| 4 | mDNS wird im WLAN nicht blockiert | manuelle IP-Eingabe |
+| 4 | Android-Version des S21 FE (14, 15 oder 16) | `targetSdk` und Tests anpassen |
+| 7 | Safari empfängt WebRTC ohne STUN im LAN | Mini-STUN in der Host-App |
+| 7 | `ScreenCapturerAndroid` und Größenänderung ab Android 14 | eigener Capturer |
+| 7 | Verhalten von HyperOS beim Sperren des Tablets während der Freigabe | Stream sauber beenden und anzeigen |
 
 ---
 
-## 10. Offene Fragen
+## 14. Offene Fragen
 
-1. **Hintergrund-Erreichbarkeit der Schüler-App:** Soll die App, solange man in einer Klasse ist, einen
-   Foreground Service mit dauerhafter Benachrichtigung „Mit Klasse verbunden“ laufen lassen (mein
-   Vorschlag, abschaltbar)? Ohne ihn kommen Anfragen im Hintergrund auf HyperOS nicht zuverlässig an.
-2. **Hosting:** Gibt es schon einen Server / eine Domain, oder soll ich von einem kleinen VPS ausgehen?
-3. **Schul-WLAN:** Ist bekannt, ob dort UDP oder Ports außer 443 gesperrt sind bzw. Geräte sich gegenseitig
-   nicht erreichen (Client-Isolation)? Dann brauchen wir TURN über TLS auf Port 443 (siehe Hosting-Doku).
+1. **Ist das S21 FE im Unterricht mit im Raum und im selben WLAN wie iPad und Tablet** (oder spannt es den
+   Hotspot auf)? Das ist Voraussetzung für die Host-Lösung.
+2. **Einmalige Zertifikats-Installation auf dem iPad** (ca. 1 Minute, Schritte in §5.2) – in Ordnung? Das ist
+   mein Vorschlag. Die Alternative wäre unverschlüsseltes HTTP im WLAN, das ich nicht empfehle.
+3. Welche **Android-Version** hat das S21 FE (*Einstellungen → Telefoninfo → Softwareinformationen*)?
+   Nicht blockierend, nur für die Tests.
 
-**Annahmen**, falls nichts anderes gesagt wird: Oberflächen auf Deutsch (Texte in Ressourcen, später
-übersetzbar); max. 40 Schüler pro Klasse; ein Stream gleichzeitig bis Phase 9.
+**Annahmen**, falls nichts anderes gesagt wird: Oberflächen auf Deutsch; max. 40 Schüler pro Klasse; ein
+Stream gleichzeitig bis Phase 9.

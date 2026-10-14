@@ -1,6 +1,6 @@
 # Sicherheit
 
-Stand: Phase 1 (Entwurf). Die Checkliste am Ende wird in jeder Phase fortgeschrieben und in Phase 10
+Stand: Phase 1, Revision 2 (Host-App auf dem Galaxy S21 FE, nur lokales Netz). Die Checkliste am Ende wird in jeder Phase fortgeschrieben und in Phase 10
 abgeschlossen.
 
 ---
@@ -15,7 +15,7 @@ abgeschlossen.
 | Geräte-Token | wer es hat, tritt als dieser Schüler auf |
 
 **Beteiligte und Angreifer:** Lehrerin; Schüler der Klasse; Außenstehende, die einen Code kennen oder raten;
-jemand im selben Netz; der Serverbetreiber (= ihr selbst).
+jemand im selben WLAN; wer das Host-Handy (S21 FE) in der Hand hat.
 
 ---
 
@@ -23,12 +23,12 @@ jemand im selben Netz; der Serverbetreiber (= ihr selbst).
 
 | Geheimnis | Erzeugung | Speicherort Client | Speicherort Server | Berechtigt zu |
 |---|---|---|---|---|
-| **Klassencode** | 6 Zeichen aus 31 Zeichen (`23456789ABCDEFGHJKMNPQRSTUVWXYZ`), `crypto.randomInt` | – (wird abgeschrieben) | Klartext (muss nachschlagbar sein) | **nur Beitreten**. Nie Zugriff auf Bildschirm, Liste oder Bilder. |
-| **Lehrer-Token** | 32 Byte CSPRNG, base64url | `localStorage` der Web-App | SHA-256-Hash | Klasse verwalten, Freigaben anfragen, Schüler entfernen, Code erneuern, Profilbilder abrufen |
+| **Klassencode** | 6 Zeichen aus 31 Zeichen (`23456789ABCDEFGHJKMNPQRSTUVWXYZ`), `SecureRandom` | – (wird abgeschrieben) | Klartext (muss nachschlagbar sein) | **nur Beitreten**. Nie Zugriff auf Bildschirm, Liste oder Bilder. |
+| **Lehrer-Token** | 32 Byte `SecureRandom`, base64url | `localStorage` der Web-App | SHA-256-Hash | Klasse verwalten, Freigaben anfragen, Schüler entfernen, Code erneuern, Profilbilder abrufen |
 | **Wiederherstellungs-Token** | 32 Byte CSPRNG | im Link `https://…/#/recover/<token>` und lokal in der Web-App | SHA-256-Hash | ein **neues** Lehrer-Token für ein weiteres Gerät erzeugen |
 | **Geräte-ID** | UUIDv4 | DataStore | Klartext | keine – nur Zuordnung |
 | **Geräte-Token** | 32 Byte CSPRNG | DataStore (App-privat, nicht im Backup) | SHA-256-Hash | als dieses Gerät verbinden, eigenes Profil ändern, auf Anfragen antworten |
-| **TURN-Zugangsdaten** | HMAC nach coturn-REST-Schema, Gültigkeit ~10 min | nur im Arbeitsspeicher | gemeinsames Geheimnis mit coturn | nur Relay-Nutzung für eine Sitzung |
+| **CA-Schlüssel der Host-App** | beim ersten Start auf dem S21 FE erzeugt | – | App-privater Speicher des S21 FE, verlässt das Gerät nie | Server-Zertifikate ausstellen, denen iPad und Schüler-App vertrauen |
 
 Der Wiederherstellungs-Token steht im **URL-Fragment** (`#…`). Fragmente werden von Browsern nicht an den
 Server gesendet, landen also weder in Server- noch in Proxy-Logs und nicht im `Referer`.
@@ -50,13 +50,13 @@ Wahrscheinlichkeit ≈ 1 : 8,9 Mio. Zusammen mit den Rate-Limits ist Durchprobie
 | Ablehnen ist endgültig | Endzustände sind unveränderlich (bedingtes `UPDATE … WHERE status='pending'`); App merkt sich beantwortete `requestId`s und reagiert auf keine zweite Nachricht dazu |
 | Abbruch im Systemdialog = Ablehnung | `RESULT_CANCELED` → `share.deny {system_dialog_cancelled}` |
 | Kein Spam an Schüler | max. eine offene Anfrage pro Gerät; nach einer Ablehnung 10 s Pause, bevor dasselbe Gerät erneut gefragt werden kann |
-| Keine Aufnahme/Speicherung | Medien laufen nie durch das Backend. coturn leitet nur verschlüsselte Pakete weiter (DTLS-SRTP, Ende-zu-Ende zwischen den Peers) und kann sie nicht entschlüsseln. Keine Aufzeichnungsfunktion in Web oder App. |
+| Keine Aufnahme/Speicherung | Medien laufen nie durch den Server, sondern direkt und verschlüsselt (DTLS-SRTP) vom Tablet zum iPad. Keine Aufzeichnungsfunktion in Web oder App. |
 | Keine Kamera, kein Mikrofon | App fordert diese Berechtigungen nicht an; Web-App ruft `getUserMedia` nie auf; WebRTC-Verbindung ist auf Lehrerseite `recvonly` |
 | Systemabfrage nicht umgehen | jede Sitzung startet mit `createScreenCaptureIntent()`; Ergebnis-Intent wird nie gespeichert oder wiederverwendet; laufende Benachrichtigung + Android-Statusleisten-Hinweis während der Aufnahme |
 | Profilbilder geschützt | nur über `GET …/avatar` mit Lehrer-Token derselben Klasse; keine öffentlichen oder erratbaren URLs; Gerät verkleinert auf ≤ 512 px; Server: max. 1 MB, nur JPEG/PNG/WebP (per Dekodierung geprüft, nicht per Dateiendung), max. 512 × 512, wird neu kodiert und von Metadaten (EXIF/GPS) befreit |
 | Stream endet sofort | siehe `architecture.md` §6.3 und §7 |
-| Transport | nur HTTPS/WSS im Produktivbetrieb; HSTS; Release-App erlaubt keinen Klartext-Verkehr (Network Security Config); Debug-Build darf für den WLAN-Test eine lokale Adresse ohne TLS nutzen |
-| Header | `Content-Security-Policy` (nur eigene Skripte, `connect-src 'self'`), `Referrer-Policy: no-referrer`, `X-Content-Type-Options: nosniff`, `frame-ancestors 'none'` |
+| Transport | HTTPS/WSS mit Zertifikaten der eigenen CA der Host-App (`architecture.md` §5.2). iPad vertraut der CA nach einmaliger Profil-Installation. Schüler-App merkt sich den CA-Fingerabdruck beim ersten Kontakt und lehnt danach jede andere CA ab. Port 8080 liefert ausschließlich das (öffentliche) CA-Zertifikat und Weiterleitungen. Klartext-HTTP für die API nur im Debug-Build. |
+| Header | `Content-Security-Policy` (nur eigene Skripte, `connect-src 'self'`), `Referrer-Policy: no-referrer`, `X-Content-Type-Options: nosniff`, `frame-ancestors 'none'` (HSTS bringt bei IP-Adressen nichts, Browser ignorieren es dort) |
 | Logs | Tokens, Codes-Fehlversuche mit vollem Code und Bilder werden nicht geloggt; IPs nur gekürzt bzw. nur für Rate-Limits im Speicher |
 | Eingaben | alle REST-Bodies und WS-Nachrichten schema-validiert, Längenbegrenzungen für Namen, max. WS-Nachrichtengröße (z. B. 64 KB; SDP passt hinein) |
 | Datensparsamkeit | inaktive Klassen werden nach z. B. 30 Tagen samt Geräten und Bildern gelöscht; „Klasse löschen“ entfernt alles sofort; Sitzungsprotokoll enthält nur Zeiten und Status |
@@ -121,19 +121,37 @@ Der Schüler entscheidet, **ob** und **was** er teilt (ganzer Bildschirm oder nu
 sieht, was der Schüler freigibt – das System kann nicht garantieren, dass es „der echte Bildschirm“ ist.
 Für Prüfungsaufsicht ist es ausdrücklich nicht geeignet.
 
-### 4.8 Vertrauen in den Server
+### 4.8 Vertrauen in das Host-Handy
 
-Der Server vermittelt die WebRTC-Signalisierung inkl. der DTLS-Fingerabdrücke. Ein **manipulierter** Server
-könnte sich als Mittelsmann einschleusen. Medien sind gegenüber TURN und Netz verschlüsselt, aber nicht
-gegenüber einem bösartigen Signalisierungsserver. Da ihr den Server selbst betreibt, ist das akzeptabel –
-der Server muss aber aktuell gehalten und abgesichert werden (siehe Hosting-Doku).
+Der Server läuft auf dem S21 FE. Wer dieses Handy kontrolliert, kontrolliert das System: Er kann alle
+Klassen, Namen und Profilbilder einsehen und – weil der Server die WebRTC-Signalisierung inkl. der
+DTLS-Fingerabdrücke vermittelt – sich mit einer manipulierten Host-App sogar als Mittelsmann in einen
+Stream einschleusen. Gegenüber dem WLAN und anderen Geräten ist das Video verschlüsselt, gegenüber einem
+bösartigen Host nicht.
 
-### 4.9 Datenschutz
+In deinem Aufbau gehört das Host-Handy dir selbst (also der Schülerseite). Für ein Privatprojekt ist das in
+Ordnung; in einer echten Schule sollte der Host bei der Lehrkraft oder der Schule liegen. Das S21 FE sollte
+eine Bildschirmsperre haben und aktuell gehalten werden.
+
+### 4.9 Nur lokales Netz und „Trust on first use“
+
+- Das System funktioniert nur, wenn alle Geräte im selben Netz sind. Wer im selben WLAN ist, kann die
+  Host-App erreichen (aber ohne Token nur beitreten – mit Code – oder das CA-Zertifikat laden).
+- Die Schüler-App vertraut der CA, die sie beim **ersten** Kontakt sieht. Betreibt beim allerersten Beitritt
+  jemand anderes im selben WLAN einen gefälschten Host mit demselben Dienstnamen, könnte sich die App mit
+  diesem verbinden. Gegenmaßnahme: die kurze Server-Kennung in Host-App und Schüler-App vergleichen
+  (wird beim ersten Beitritt angezeigt). Danach ist die CA festgelegt.
+- Wird die Host-App neu installiert, entsteht eine neue CA: iPad-Profil neu installieren, Schüler-App
+  bestätigt den Wechsel ausdrücklich (keine stille Annahme).
+- Daten liegen nur auf dem S21 FE. Geht es verloren oder wird die App gelöscht, sind alle Klassen weg
+  (Backups sind absichtlich deaktiviert, damit Tokens nicht in Cloud-Backups landen).
+
+### 4.10 Datenschutz
 
 Es werden Namen und ggf. Fotos von (oft minderjährigen) Schülern verarbeitet. Für den Einsatz in einer
 Schule sind die dortigen Datenschutzvorgaben (DSGVO, Vorgaben des Schulträgers, ggf. Einwilligungen) zu
 beachten. Das ist keine Rechtsberatung. Technisch empfehlenswert: Vornamen oder Spitznamen statt voller
-Namen, eingebaute Avatare statt Fotos, Server in der EU, kurze Aufbewahrungsfristen.
+Namen, eingebaute Avatare statt Fotos, kurze Aufbewahrungsfristen. Positiv: Alle Daten bleiben lokal auf dem S21 FE, es gibt keinen Cloud-Dienst.
 
 ---
 
@@ -141,9 +159,9 @@ Namen, eingebaute Avatare statt Fotos, Server in der EU, kurze Aufbewahrungsfris
 
 Wird ab Phase 3 abgehakt.
 
-**Backend**
-- [ ] Tokens mit CSPRNG (`crypto.randomBytes`), Codes mit `crypto.randomInt`
-- [ ] Nur Hashes von Tokens in der Datenbank
+**Server (Host-App)**
+- [ ] Tokens und Codes mit `SecureRandom`
+- [ ] Nur Hashes von Tokens in der Datendatei
 - [ ] Code-Alphabet ohne 0/O, 1/I/L; Eingabe normalisiert (Großschreibung, Trennzeichen entfernt)
 - [ ] Rate-Limits Beitritt (IP, Code), Klassen-Erstellung (IP), Anfragen (Gerät)
 - [ ] Jede Lehrer-Aktion prüft Token ↔ Klasse ↔ Gerät
@@ -153,10 +171,10 @@ Wird ab Phase 3 abgehakt.
 - [ ] Bild-Upload: Größe, Format per Dekodierung, Maße, Neukodierung, Metadaten entfernt
 - [ ] Schema-Validierung aller Eingaben, WS-Nachrichtengröße begrenzt
 - [ ] Keine Geheimnisse in Logs
-- [ ] TURN-Zugangsdaten kurzlebig, nur an Sitzungsteilnehmer
+- [ ] Alle Zustandsänderungen über einen Mutex serialisiert, Datei atomar geschrieben
 
 **Web**
-- [ ] CSP, `Referrer-Policy: no-referrer`, HSTS
+- [ ] CSP, `Referrer-Policy: no-referrer`
 - [ ] Recovery-Token nur im Fragment, nach Einlösen aus der Adresszeile entfernt
 - [ ] Kein `getUserMedia`, Peer-Verbindung `recvonly`
 - [ ] Profilbilder nur per authentifiziertem `fetch`
@@ -166,12 +184,13 @@ Wird ab Phase 3 abgehakt.
 - [ ] Systemdialog bei jeder Freigabe, Intent nie wiederverwendet
 - [ ] Laufende Benachrichtigung während der Freigabe mit „Beenden“
 - [ ] `classId`-Prüfung eingehender Anfragen
-- [ ] Release-Build ohne Klartext-Verkehr
+- [ ] Release-Build ohne Klartext-Verkehr, CA-Fingerabdruck festgelegt nach erstem Kontakt
 - [ ] Backups deaktiviert
 - [ ] `TODO:` optional Token mit Android Keystore verschlüsseln
 
-**Betrieb**
-- [ ] Firewall: nur 80/443 TCP, TURN-Ports, SSH
-- [ ] coturn: `use-auth-secret`, `no-multicast-peers`, private IP-Bereiche als `denied-peer-ip` (verhindert Missbrauch als Proxy ins interne Netz)
-- [ ] Automatische Sicherheitsupdates des Servers
-- [ ] SQLite-Datei nicht öffentlich erreichbar, regelmäßiges Backup (enthält Namen/Bilder!)
+**Host-App / Betrieb**
+- [ ] CA-Schlüssel nur im App-privaten Speicher, nie exportiert
+- [ ] Server-Zertifikat: SAN mit IP, EKU `serverAuth`, Laufzeit ≤ 1 Jahr, automatische Erneuerung
+- [ ] Port 8080 liefert nur das CA-Zertifikat und Weiterleitungen
+- [ ] Datendatei und Profilbilder nur im App-privaten Speicher, Backups deaktiviert
+- [ ] S21 FE mit Bildschirmsperre und aktuellen Sicherheitsupdates
