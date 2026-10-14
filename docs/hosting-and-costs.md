@@ -1,28 +1,26 @@
 # Hosting, Kosten und Testbetrieb
 
-Stand: Phase 1, Revision 2. Gehostet wird alles von der **Host-App auf dem Galaxy S21 FE 5G** – ohne Root,
-ohne Server, ohne Domain. Die Details zur Technik stehen in `architecture.md` §4.1, §5 und §10.
+Stand: Phase 1, Revision 3. Gehostet wird alles von der **Host-App auf dem Galaxy S21 FE 5G zuhause**
+(Vodafone-Anschluss, FritzBox) – ohne Root und ohne Mietserver. iPad und Tablet in der Schule erreichen es
+übers Internet unter einer festen, kostenlosen DuckDNS-Adresse. Details zur Technik: `architecture.md`
+§4.1, §5 und §10.
 
 ---
 
 ## 1. Was läuft wo
 
-| Gerät | App | Aufgabe |
-|---|---|---|
-| **Galaxy S21 FE 5G** | **Host-APK** („ClassroomView Host“) | Server (REST + WebSocket), liefert die Lehrer-Website aus, speichert Klassen und Profilbilder, eigene Zertifizierungsstelle, mDNS-Ankündigung |
-| **Xiaomi Pad 7** | **Schüler-APK** („ClassroomView“) | Profil, Beitritt, Freigabe, sendet das Video direkt ans iPad |
-| **iPad** | keine App – **Safari** bzw. Home-Bildschirm-Verknüpfung | Lehrer-Oberfläche, empfängt das Video |
+| Ort | Gerät | App | Aufgabe |
+|---|---|---|---|
+| Zuhause | **Galaxy S21 FE 5G** (One UI 8) | **Host-APK** („ClassroomView Host“) | Server (REST + WebSocket), liefert die Lehrer-Website aus, speichert Klassen und Profilbilder, hält DuckDNS-Adresse und Zertifikat aktuell |
+| Zuhause | FritzBox | – | leitet Port 443 von außen an das S21 FE (Port 8443) weiter |
+| Schule | **Xiaomi Pad 7** | **Schüler-APK** („ClassroomView“) | Profil, Beitritt, Freigabe, sendet das Video direkt ans iPad |
+| Schule | **iPad der Lehrerin** | keine App – **Safari** bzw. Home-Bildschirm-Verknüpfung | Lehrer-Oberfläche, empfängt das Video |
 
-Alle drei müssen im **selben Netz** sein: dasselbe WLAN **oder** iPad und Tablet im Hotspot des S21 FE.
+Datenwege:
 
-Ports auf dem S21 FE (alle über 1024, daher ohne Root möglich):
-
-| Port | Zweck |
-|---|---|
-| 8443/TCP | HTTPS + WSS (Website, API, WebSocket) |
-| 8080/TCP | nur CA-Zertifikat herunterladen, sonst Weiterleitung auf 8443 |
-| 5353/UDP | mDNS (vom System verwaltet) |
-| 3478/UDP | nur falls nötig: Mini-STUN (siehe `architecture.md` §5.3) |
+- **Steuerdaten** (Beitritt, Liste, Anfragen, WebRTC-Signalisierung, Profilbilder): Schule → Internet →
+  FritzBox → S21 FE. Wenige KB/s.
+- **Video**: nur innerhalb des Schul-WLANs, Tablet → iPad. Belastet deinen Heimanschluss nicht.
 
 ---
 
@@ -30,59 +28,55 @@ Ports auf dem S21 FE (alle über 1024, daher ohne Root möglich):
 
 | Posten | Kosten |
 |---|---|
-| Server, Domain, Zertifikat | **0 €** – entfällt |
-| Strom | vernachlässigbar (Handy hängt am Ladegerät) |
-| Mobile Daten | **0** für ClassroomView – Video und Steuerung bleiben im lokalen Netz. Nur wenn iPad/Tablet über den Hotspot *zusätzlich* im Internet surfen, verbraucht das Datenvolumen. |
-| Optional: GitHub | 0 € – GitHub Actions baut die APKs; für private Repositories sind monatlich Freiminuten enthalten (genaue Menge siehe GitHub-Tarif) |
-
-**Last:** Der Server vermittelt nur Nachrichten; das Video läuft direkt Tablet → iPad. Für das S21 FE ist das
-eine sehr geringe Last. Der größte Verbraucher ist das Wach-Halten von WLAN und CPU – daher Ladegerät.
-
----
-
-## 3. Einrichtung (Kurzfassung, ausführlich in Phase 10)
-
-1. **APKs installieren.** Beide APKs aus GitHub Actions (bzw. später einem GitHub-Release) herunterladen.
-   Auf jedem Gerät „Installation aus unbekannten Quellen“ für den Browser bzw. Dateimanager erlauben.
-2. **S21 FE:** Host-App öffnen → Server starten → Benachrichtigungen erlauben → Akku-Ausnahme bestätigen →
-   Samsung-Einstellungen laut Hinweis (`architecture.md` §10). Ans Ladegerät.
-3. **iPad, einmalig:** QR-Code aus der Host-App mit der Kamera scannen bzw. `http://<IP>:8080/ca` öffnen →
-   Profil installieren → Zertifikat voll vertrauen (`architecture.md` §5.2) → `https://<IP>:8443` öffnen →
-   *Teilen → Zum Home-Bildschirm*.
-4. **Pad 7:** Schüler-App öffnen → HyperOS-Hinweise abarbeiten (`architecture.md` §9.3) → Profil → Code
-   eingeben. Die App findet das S21 FE automatisch.
-
-**Tipp:** Im Router dem S21 FE eine feste IP-Adresse zuweisen (DHCP-Reservierung). Dann ändert sich die
-Adresse fürs iPad nie.
+| Server | **0 €** – das S21 FE |
+| Adresse (DuckDNS-Subdomain) | **0 €** |
+| Zertifikat (Let's Encrypt) | **0 €** |
+| Strom fürs S21 FE im Dauerbetrieb | wenige Euro pro Jahr |
+| Datenvolumen Heimanschluss | vernachlässigbar (kein Video) |
+| GitHub Actions zum Bauen der APKs | 0 € im Rahmen der Freiminuten |
 
 ---
 
-## 4. Entwickeln und Testen ohne Handy
+## 3. Voraussetzung: Ist dein Anschluss von außen erreichbar?
 
-Weil der Server ein reines Kotlin/JVM-Modul ist, läuft er auch auf einem PC:
+Das muss **vor Phase 3** geklärt sein (siehe `architecture.md` §5.1):
 
-- `./gradlew :backend:server:run` startet ihn auf dem PC, im Debug-Modus auch ohne TLS.
-- Die Web-App läuft dann per `npm run dev` (Vite) mit Weiterleitung von `/api` und `/ws` auf den Server.
+1. *FritzBox → Internet → Online-Monitor*: „DS-Lite“ oder normale IPv4-Adresse?
+   - normale IPv4 → passt.
+   - DS-Lite → weiter mit 2.
+2. Auf dem Pad 7 **im Schul-WLAN** `test-ipv6.com` öffnen.
+   - IPv6 funktioniert → passt (Freigabe läuft dann über IPv6).
+   - kein IPv6 → Ausweichmöglichkeiten in `architecture.md` §5.5.
+
+---
+
+## 4. Einrichtung (Kurzfassung, ausführlich ab Phase 3)
+
+1. **DuckDNS:** auf duckdns.org anmelden, Subdomain anlegen (z. B. `meineklasse`), Token kopieren.
+2. **S21 FE:** Host-APK installieren (aus GitHub), öffnen, Assistent folgen: Subdomain + Token eintragen,
+   Benachrichtigungen erlauben, Akku-Ausnahme bestätigen, Samsung-Einstellungen laut Hinweis
+   (`architecture.md` §10). Dauerhaft ans Ladegerät.
+3. **FritzBox:** Portfreigabe extern 443 → S21 FE Port 8443 (TCP), S21 FE immer gleiche IP
+   (`architecture.md` §5.1).
+4. Die Host-App holt das Zertifikat und zeigt „Von außen erreichbar“ an, sobald alles passt.
+5. **Lehrerin:** bekommt den **Einladungslink** aus der Host-App (z. B. per Nachricht). Öffnet ihn in Safari
+   → *Teilen → Zum Home-Bildschirm*. Mehr muss sie nicht einrichten.
+6. **Pad 7:** Schüler-APK installieren, HyperOS-Hinweise abarbeiten (`architecture.md` §9.3), Profil anlegen,
+   Code eingeben.
+
+APKs: GitHub Actions baut bei jedem Push beide APKs. Du lädst sie auf dem jeweiligen Gerät herunter und
+erlaubst einmalig „Installation aus unbekannten Quellen“ für Browser bzw. Dateimanager.
+
+---
+
+## 5. Entwickeln und Testen ohne Handy
+
+Der Server ist ein reines Kotlin/JVM-Modul und läuft auch auf einem PC:
+
+- `./gradlew :backend:server:run` startet ihn lokal, im Debug-Modus ohne TLS.
+- Web-App per `npm run dev` (Vite) mit Weiterleitung von `/api` und `/ws` auf den Server.
 - Die automatischen Server-Tests laufen auf dem PC und in GitHub Actions.
-- Die Schüler-App im Debug-Build kann eine manuelle Server-Adresse (auch `http://`) nutzen.
-
-So lässt sich jede Phase prüfen, bevor sie aufs Handy kommt.
-
----
-
-## 5. Später: Umzug auf einen Server (falls es übers Internet gehen soll)
-
-Das S21 FE ist aus dem Internet nicht erreichbar. Soll das System später auch außerhalb eines gemeinsamen
-Netzes funktionieren, läuft derselbe Server-Code auf einem kleinen VPS:
-
-| Posten | ca. Kosten (Richtwerte, ohne Gewähr) |
-|---|---|
-| Kleiner VPS in der EU (2 vCPU, 2–4 GB RAM, ≥ 20 TB Traffic inkl.) | ca. 4–8 € / Monat |
-| Domain (`.de`) | ca. 5–15 € / Jahr |
-| TLS-Zertifikat (Let's Encrypt über Caddy) | 0 € |
-| TURN-Server (coturn) auf demselben VPS | 0 € extra; ca. 1,8 GB Traffic pro Stream-Stunde, falls über TURN geleitet |
-
-Das ist **nicht** Teil des aktuellen Plans und wird nur gebaut, wenn du es möchtest.
+- Die Schüler-App im Debug-Build kann eine andere Server-Adresse (auch `http://`) nutzen.
 
 ---
 
@@ -90,9 +84,9 @@ Das ist **nicht** Teil des aktuellen Plans und wird nur gebaut, wenn du es möch
 
 | Problem | Ursache / Lösung |
 |---|---|
-| Tablet findet den Host nicht | mDNS im WLAN blockiert → IP manuell in der Schüler-App eintragen; oder Hotspot des S21 FE nutzen |
-| iPad zeigt „Verbindung nicht privat“ | CA-Profil nicht installiert oder Vertrauen nicht eingeschaltet (`architecture.md` §5.2) |
-| Alles bricht nach einiger Zeit ab | Samsung hat die Host-App schlafen gelegt → Akku „Nicht eingeschränkt“, „Nie schlafende Apps“, Ladegerät |
+| In der Schule „Server nicht erreichbar“ | S21 FE aus, nicht im WLAN oder schläft → Ladegerät, Samsung-Akku-Einstellungen; Internet zuhause gestört; Portfreigabe fehlt |
+| Funktionierte, plötzlich nicht mehr | Vodafone hat die IP gewechselt und DuckDNS ist noch nicht aktualisiert → Host-App meldet alle 5 min; Status in der Host-App prüfen |
+| Funktioniert zuhause, aber nicht in der Schule | DS-Lite und Schul-WLAN ohne IPv6 → `architecture.md` §5.5 |
+| Zertifikatsfehler in Safari | Zertifikat abgelaufen (Erneuerung fehlgeschlagen) → Status in der Host-App; DuckDNS-Token prüfen |
 | Anfragen kommen am Tablet nicht an | HyperOS hat die Schüler-App beendet → Autostart, „Keine Einschränkungen“, App sperren |
-| Adresse fürs iPad stimmt nicht mehr | IP des S21 FE hat sich geändert → feste IP im Router; QR-Code in der Host-App neu scannen |
-| Kein Bild, obwohl „Freigabe läuft“ | Geräte erreichen sich nicht direkt (z. B. anderes WLAN) → alle ins selbe Netz bzw. in den Hotspot |
+| Kein Bild, obwohl „Freigabe läuft“ | iPad und Tablet nicht im selben Schul-WLAN, oder Safari findet ohne STUN keinen Weg (Prüfpunkt Phase 7) |

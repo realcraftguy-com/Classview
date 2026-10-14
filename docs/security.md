@@ -1,6 +1,6 @@
 # Sicherheit
 
-Stand: Phase 1, Revision 2 (Host-App auf dem Galaxy S21 FE, nur lokales Netz). Die Checkliste am Ende wird in jeder Phase fortgeschrieben und in Phase 10
+Stand: Phase 1, Revision 3 (Host-App auf dem Galaxy S21 FE zuhause, aus dem Internet erreichbar). Die Checkliste am Ende wird in jeder Phase fortgeschrieben und in Phase 10
 abgeschlossen.
 
 ---
@@ -15,7 +15,8 @@ abgeschlossen.
 | Geräte-Token | wer es hat, tritt als dieser Schüler auf |
 
 **Beteiligte und Angreifer:** Lehrerin; Schüler der Klasse; Außenstehende, die einen Code kennen oder raten;
-jemand im selben WLAN; wer das Host-Handy (S21 FE) in der Hand hat.
+**jeder im Internet** (der Server ist öffentlich erreichbar, automatische Scanner finden ihn schnell); jemand
+im selben WLAN; wer das Host-Handy (S21 FE) in der Hand hat.
 
 ---
 
@@ -28,7 +29,9 @@ jemand im selben WLAN; wer das Host-Handy (S21 FE) in der Hand hat.
 | **Wiederherstellungs-Token** | 32 Byte CSPRNG | im Link `https://…/#/recover/<token>` und lokal in der Web-App | SHA-256-Hash | ein **neues** Lehrer-Token für ein weiteres Gerät erzeugen |
 | **Geräte-ID** | UUIDv4 | DataStore | Klartext | keine – nur Zuordnung |
 | **Geräte-Token** | 32 Byte CSPRNG | DataStore (App-privat, nicht im Backup) | SHA-256-Hash | als dieses Gerät verbinden, eigenes Profil ändern, auf Anfragen antworten |
-| **CA-Schlüssel der Host-App** | beim ersten Start auf dem S21 FE erzeugt | – | App-privater Speicher des S21 FE, verlässt das Gerät nie | Server-Zertifikate ausstellen, denen iPad und Schüler-App vertrauen |
+| **Host-Einladungsschlüssel** | 32 Byte `SecureRandom`, in der Host-App erneuerbar | im Einladungslink (Fragment) und `localStorage` der Lehrer-Web-App | SHA-256-Hash | **Klassen anlegen** – sonst könnte jeder im Internet Klassen auf deinem Server anlegen |
+| **DuckDNS-Token** | von DuckDNS | – | App-privater Speicher des S21 FE | Adresse ändern: Wer es hat, kann `…duckdns.org` auf einen eigenen Server zeigen lassen |
+| **TLS-Schlüssel** (Let's Encrypt) | auf dem S21 FE erzeugt | – | App-privater Speicher, verlässt das Gerät nie | Server-Identität |
 
 Der Wiederherstellungs-Token steht im **URL-Fragment** (`#…`). Fragmente werden von Browsern nicht an den
 Server gesendet, landen also weder in Server- noch in Proxy-Logs und nicht im `Referer`.
@@ -43,6 +46,7 @@ Wahrscheinlichkeit ≈ 1 : 8,9 Mio. Zusammen mit den Rate-Limits ist Durchprobie
 | Regel | Umsetzung |
 |---|---|
 | Code nur zum Beitreten | Code-Endpunkt `POST /api/join` liefert nur ein eigenes Geräte-Token; alle anderen Endpunkte verlangen Lehrer- oder Geräte-Token |
+| Klassen anlegen nur mit Einladung | `POST /api/classes` verlangt den Host-Einladungsschlüssel; ohne ihn sieht ein Fremder nur die Startseite |
 | Code widerrufbar, erneuerbar, optional ablaufend | „Code erneuern“ (alter sofort ungültig), „Beitritt pausieren“, Ablaufzeit wählbar; bereits beigetretene Geräte verbinden sich mit ihrem Token und sind nicht betroffen |
 | Rate-Limits beim Beitritt | pro IP: 10 Versuche/min, 30 fehlgeschlagene/h → danach 1 h gesperrt; pro Code: 30 Beitritte/min; pro Klasse max. 40 Geräte; global: Fehlversuche überwacht. Klassen-Erstellung pro IP begrenzt. (Werte vorläufig, in Phase 3 festgelegt.) Hinweis: Zähler liegen im Speicher und beginnen nach Neustart neu. |
 | Anfrage nur an genau ein Gerät, serverseitig geprüft | `share.request` prüft: Lehrer-Token gültig und nicht widerrufen → gehört zu `classId` der WS-Verbindung → `deviceId` gehört zu dieser Klasse, ist nicht entfernt, ist online. Nachricht geht nur an die eine WS-Verbindung dieses Geräts. |
@@ -55,8 +59,8 @@ Wahrscheinlichkeit ≈ 1 : 8,9 Mio. Zusammen mit den Rate-Limits ist Durchprobie
 | Systemabfrage nicht umgehen | jede Sitzung startet mit `createScreenCaptureIntent()`; Ergebnis-Intent wird nie gespeichert oder wiederverwendet; laufende Benachrichtigung + Android-Statusleisten-Hinweis während der Aufnahme |
 | Profilbilder geschützt | nur über `GET …/avatar` mit Lehrer-Token derselben Klasse; keine öffentlichen oder erratbaren URLs; Gerät verkleinert auf ≤ 512 px; Server: max. 1 MB, nur JPEG/PNG/WebP (per Dekodierung geprüft, nicht per Dateiendung), max. 512 × 512, wird neu kodiert und von Metadaten (EXIF/GPS) befreit |
 | Stream endet sofort | siehe `architecture.md` §6.3 und §7 |
-| Transport | HTTPS/WSS mit Zertifikaten der eigenen CA der Host-App (`architecture.md` §5.2). iPad vertraut der CA nach einmaliger Profil-Installation. Schüler-App merkt sich den CA-Fingerabdruck beim ersten Kontakt und lehnt danach jede andere CA ab. Port 8080 liefert ausschließlich das (öffentliche) CA-Zertifikat und Weiterleitungen. Klartext-HTTP für die API nur im Debug-Build. |
-| Header | `Content-Security-Policy` (nur eigene Skripte, `connect-src 'self'`), `Referrer-Policy: no-referrer`, `X-Content-Type-Options: nosniff`, `frame-ancestors 'none'` (HSTS bringt bei IP-Adressen nichts, Browser ignorieren es dort) |
+| Transport | nur HTTPS/WSS mit Let's-Encrypt-Zertifikat für die DuckDNS-Adresse (`architecture.md` §5.2), normale Zertifikatsprüfung auf allen Geräten. Klartext-HTTP nur im Debug-Modus auf dem PC. Release-App erlaubt keinen Klartext-Verkehr. |
+| Header | `Content-Security-Policy` (nur eigene Skripte, `connect-src 'self'`), `Referrer-Policy: no-referrer`, `X-Content-Type-Options: nosniff`, `frame-ancestors 'none'`, HSTS |
 | Logs | Tokens, Codes-Fehlversuche mit vollem Code und Bilder werden nicht geloggt; IPs nur gekürzt bzw. nur für Rate-Limits im Speicher |
 | Eingaben | alle REST-Bodies und WS-Nachrichten schema-validiert, Längenbegrenzungen für Namen, max. WS-Nachrichtengröße (z. B. 64 KB; SDP passt hinein) |
 | Datensparsamkeit | inaktive Klassen werden nach z. B. 30 Tagen samt Geräten und Bildern gelöscht; „Klasse löschen“ entfernt alles sofort; Sitzungsprotokoll enthält nur Zeiten und Status |
@@ -133,25 +137,28 @@ In deinem Aufbau gehört das Host-Handy dir selbst (also der Schülerseite). Fü
 Ordnung; in einer echten Schule sollte der Host bei der Lehrkraft oder der Schule liegen. Das S21 FE sollte
 eine Bildschirmsperre haben und aktuell gehalten werden.
 
-### 4.9 Nur lokales Netz und „Trust on first use“
+### 4.9 Server zuhause, offen im Internet
 
-- Das System funktioniert nur, wenn alle Geräte im selben Netz sind. Wer im selben WLAN ist, kann die
-  Host-App erreichen (aber ohne Token nur beitreten – mit Code – oder das CA-Zertifikat laden).
-- Die Schüler-App vertraut der CA, die sie beim **ersten** Kontakt sieht. Betreibt beim allerersten Beitritt
-  jemand anderes im selben WLAN einen gefälschten Host mit demselben Dienstnamen, könnte sich die App mit
-  diesem verbinden. Gegenmaßnahme: die kurze Server-Kennung in Host-App und Schüler-App vergleichen
-  (wird beim ersten Beitritt angezeigt). Danach ist die CA festgelegt.
-- Wird die Host-App neu installiert, entsteht eine neue CA: iPad-Profil neu installieren, Schüler-App
-  bestätigt den Wechsel ausdrücklich (keine stille Annahme).
+- Durch die Portfreigabe ist der Server auf dem S21 FE **für jeden im Internet erreichbar**. Das ist nötig,
+  damit die Schule ihn erreicht. Die Adresse steht zudem in öffentlichen Zertifikatsprotokollen
+  (Certificate Transparency) und wird von Scannern schnell gefunden.
+- Ohne Code, Token oder Einladungsschlüssel kann ein Fremder nur die Startseite laden und Beitrittscodes
+  raten (rate-limitiert, siehe §2).
+- Freigegeben wird **nur ein Port zu nur einem Gerät**. Andere Geräte in deinem Heimnetz sind nicht
+  erreichbar. Die Host-App läuft in Androids App-Sandbox; eine Sicherheitslücke im Server würde zuerst nur
+  die Daten dieser App betreffen.
+- Empfehlung: Auf dem S21 FE möglichst keine sensiblen privaten Daten, Bildschirmsperre, Updates
+  installieren. Wenn ClassroomView nicht gebraucht wird (Ferien), Server in der Host-App stoppen.
 - Daten liegen nur auf dem S21 FE. Geht es verloren oder wird die App gelöscht, sind alle Klassen weg
   (Backups sind absichtlich deaktiviert, damit Tokens nicht in Cloud-Backups landen).
+- Fällt das S21 FE oder das Internet zuhause aus, funktioniert ClassroomView in der Schule nicht.
 
 ### 4.10 Datenschutz
 
 Es werden Namen und ggf. Fotos von (oft minderjährigen) Schülern verarbeitet. Für den Einsatz in einer
 Schule sind die dortigen Datenschutzvorgaben (DSGVO, Vorgaben des Schulträgers, ggf. Einwilligungen) zu
 beachten. Das ist keine Rechtsberatung. Technisch empfehlenswert: Vornamen oder Spitznamen statt voller
-Namen, eingebaute Avatare statt Fotos, kurze Aufbewahrungsfristen. Positiv: Alle Daten bleiben lokal auf dem S21 FE, es gibt keinen Cloud-Dienst.
+Namen, eingebaute Avatare statt Fotos, kurze Aufbewahrungsfristen. Positiv: Alle Daten liegen bei dir zuhause auf dem S21 FE; DuckDNS erfährt nur deine IP-Adresse, Let's Encrypt nur die Adresse `…duckdns.org`.
 
 ---
 
@@ -184,13 +191,15 @@ Wird ab Phase 3 abgehakt.
 - [ ] Systemdialog bei jeder Freigabe, Intent nie wiederverwendet
 - [ ] Laufende Benachrichtigung während der Freigabe mit „Beenden“
 - [ ] `classId`-Prüfung eingehender Anfragen
-- [ ] Release-Build ohne Klartext-Verkehr, CA-Fingerabdruck festgelegt nach erstem Kontakt
+- [ ] Release-Build ohne Klartext-Verkehr
 - [ ] Backups deaktiviert
 - [ ] `TODO:` optional Token mit Android Keystore verschlüsseln
 
 **Host-App / Betrieb**
-- [ ] CA-Schlüssel nur im App-privaten Speicher, nie exportiert
-- [ ] Server-Zertifikat: SAN mit IP, EKU `serverAuth`, Laufzeit ≤ 1 Jahr, automatische Erneuerung
-- [ ] Port 8080 liefert nur das CA-Zertifikat und Weiterleitungen
+- [ ] TLS-Schlüssel und DuckDNS-Token nur im App-privaten Speicher, nie geloggt
+- [ ] Zertifikat wird automatisch erneuert, Host-App warnt vor Ablauf
+- [ ] FritzBox: **nur** Port 443 → S21 FE:8443 freigegeben, keine weiteren Freigaben, kein „Exposed Host“
+- [ ] Klassen anlegen nur mit Host-Einladungsschlüssel
+- [ ] Rate-Limits für alle unauthentifizierten Endpunkte (Internet!)
 - [ ] Datendatei und Profilbilder nur im App-privaten Speicher, Backups deaktiviert
 - [ ] S21 FE mit Bildschirmsperre und aktuellen Sicherheitsupdates
