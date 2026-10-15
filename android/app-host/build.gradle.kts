@@ -44,6 +44,9 @@ android {
     }
 
     packaging {
+        // Die Go-Bibliothek (~22 MB) komprimiert speichern; sonst wird die APK sehr groß.
+        jniLibs { useLegacyPackaging = true }
+        dex { useLegacyPackaging = true }
         resources {
             excludes += setOf("META-INF/INDEX.LIST", "META-INF/io.netty.versions.properties", "META-INF/{AL2.0,LGPL2.1}")
             pickFirsts += setOf("META-INF/versions/9/previous-compilation-data.bin")
