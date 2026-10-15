@@ -13,3 +13,7 @@ dist/
 
 # OS
 .DS_Store
+
+# Erzeugte Tailscale-Bibliothek (gomobile bind) und lokale Serverdaten
+android/app-host/libs/
+.dev-data/
