@@ -15,23 +15,25 @@ HTTPS-Zertifikat); das Video selbst bleibt im Schul-WLAN.
 | ClassroomView (Schüler-App) | Xiaomi Pad 7 (Schule) |
 | Lehrer-Web-App in Safari | iPad der Lehrerin (Schule) |
 
-> Status: **Phase 2 – Mockups in Review** ([Übersicht](docs/mockups/README.md)).
+> Status: **Phase 3 – Server, Host-App und Lehrer-Web-App in Review.** Einrichtung und Test: [`docs/setup.md`](docs/setup.md).
 
 ## Repository-Struktur (geplant)
 
 | Ordner                | Inhalt                                                                  | ab Phase |
 |-----------------------|-------------------------------------------------------------------------|----------|
 | `/docs`               | Architektur, Sicherheit, Hosting, später Test- und Fehlerhilfe           | 1        |
-| `/web`                | Lehrer-Web-App (React + TypeScript + Vite), zuerst statische Mockups     | 2        |
+| `/web`                | Lehrer-Web-App (React + TypeScript + Vite); `web/mockups` = statische Mockups | 2 / 3 |
 | `/android/app-student`| Schüler-App (Kotlin, Jetpack Compose, Material 3)                        | 2        |
 | `/backend`            | `protocol` (gemeinsame Nachrichten) und `server` (Kotlin + Ktor, läuft auch auf dem PC) | 3 |
-| `/android/app-host`   | Host-App: bettet Server und Web-App ein                                  | 3        |
+| `/android/app-host`   | Host-App: bettet Server, Web-App und Tailscale ein                       | 3        |
+| `/android/tailscale-bridge` | Go-Brücke zu Tailscale (tsnet + Funnel), per gomobile gebaut        | 3        |
 | `/.github/workflows`  | Tests und Bau beider APKs                                                | 3        |
 
 ## Dokumentation
 
 - [`docs/architecture.md`](docs/architecture.md) – Komponenten, Technikwahl, Datenmodell, Protokoll, Ablaufdiagramme, Android-Besonderheiten
 - [`docs/security.md`](docs/security.md) – Sicherheitsmodell, Grenzen ohne Benutzerkonten, Checkliste
+- [`docs/setup.md`](docs/setup.md) – Einrichtung (Tailscale, Host-App, iPad) und Testanleitung
 - [`docs/mockups/README.md`](docs/mockups/README.md) – Mockups aller Bildschirme (Bilder)
 - [`docs/hosting-and-costs.md`](docs/hosting-and-costs.md) – Was wo läuft, Kosten, Erreichbarkeit, Einrichtung, Entwickeln ohne Handy
 
@@ -40,8 +42,8 @@ HTTPS-Zertifikat); das Video selbst bleibt im Schul-WLAN.
 | #  | Phase                                     | Status        |
 |----|-------------------------------------------|---------------|
 | 1  | Architektur                               | fertig        |
-| 2  | Mockups (HTML + Compose-Previews)         | in Review     |
-| 3  | Server + Host-App: Klassen, Codes, Tokens, Beitritt | offen |
+| 2  | Mockups (HTML + Compose-Previews)         | fertig        |
+| 3  | Server + Host-App + Lehrer-Web: Klassen, Codes, Tokens, Beitritt | in Review |
 | 4  | Android-Basis: Profil, Avatar, Beitritt   | offen         |
 | 5  | Echtzeit-Schülerliste                     | offen         |
 | 6  | Freigabe-Anfragen (ohne Stream)           | offen         |

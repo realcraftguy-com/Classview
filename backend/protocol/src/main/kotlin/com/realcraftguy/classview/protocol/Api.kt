@@ -111,6 +111,7 @@ data class ClassSnapshot(
     val teacherName: String?,
     val code: String?,
     val codeExpiresAt: Long?,
+    val codeTtl: CodeTtl,
     val joinPaused: Boolean,
     val maxDevices: Int,
     val devices: List<DeviceDto>,

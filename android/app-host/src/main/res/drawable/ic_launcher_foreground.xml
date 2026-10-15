@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Server-Symbol: zwei gestapelte Einschübe mit Statuspunkten (108×108, sichere Zone 66×66). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="#FFFFFF" android:pathData="M36,36h36a4,4 0 0 1 4,4v10a4,4 0 0 1 -4,4H36a4,4 0 0 1 -4,-4V40a4,4 0 0 1 4,-4z"/>
+    <path android:fillColor="#FFFFFF" android:fillAlpha="0.75" android:pathData="M36,58h36a4,4 0 0 1 4,4v6a4,4 0 0 1 -4,4H36a4,4 0 0 1 -4,-4v-6a4,4 0 0 1 4,-4z"/>
+    <path android:fillColor="#2B6BE4" android:pathData="M42,45m-3,0a3,3 0 1 1 6,0a3,3 0 1 1 -6,0"/>
+    <path android:fillColor="#2B6BE4" android:pathData="M42,65m-2.5,0a2.5,2.5 0 1 1 5,0a2.5,2.5 0 1 1 -5,0"/>
+</vector>

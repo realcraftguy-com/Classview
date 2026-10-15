@@ -45,4 +45,5 @@ tasks.test {
 
 tasks.named<JavaExec>("run") {
     workingDir = rootProject.projectDir
+    jvmArgs("-Dstdout.encoding=UTF-8", "-Dfile.encoding=UTF-8")
 }

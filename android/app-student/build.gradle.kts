@@ -24,6 +24,17 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    // Fester Debug-Schlüssel im Repository, damit neue Versionen (auch aus GitHub Actions) sich über die
+    // alte installieren lassen, ohne dass App-Daten verloren gehen. Kein Geheimnis – nur für Debug-Builds.
+    signingConfigs {
+        getByName("debug") {
+            storeFile = rootProject.file("android/debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     buildFeatures {
         compose = true
     }

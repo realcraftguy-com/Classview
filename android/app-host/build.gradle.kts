@@ -4,6 +4,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.roborazzi)
 }
 
@@ -15,8 +16,26 @@ android {
         applicationId = "com.realcraftguy.classview.host"
         minSdk = 29
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.2.0-mockup"
+        versionCode = 3
+        versionName = "0.3.0"
+        // Die Tailscale-Bibliothek ist nur für arm64 gebaut (Galaxy S21 FE).
+        ndk { abiFilters += "arm64-v8a" }
+    }
+
+    // Fester Debug-Schlüssel im Repository, damit neue Versionen (auch aus GitHub Actions) sich über die
+    // alte installieren lassen, ohne dass App-Daten verloren gehen. Kein Geheimnis – nur für Debug-Builds.
+    signingConfigs {
+        getByName("debug") {
+            storeFile = rootProject.file("android/debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
+    buildFeatures {
+        compose = true
+        buildConfig = true
     }
 
     compileOptions {
@@ -24,26 +43,54 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    buildFeatures {
-        compose = true
+    packaging {
+        resources {
+            excludes += setOf("META-INF/INDEX.LIST", "META-INF/io.netty.versions.properties", "META-INF/{AL2.0,LGPL2.1}")
+            pickFirsts += setOf("META-INF/versions/9/previous-compilation-data.bin")
+        }
     }
 
     testOptions {
         unitTests.isIncludeAndroidResources = true
     }
+
+    // Gebaute Lehrer-Web-App (web/dist) als assets/web in die APK packen.
+    sourceSets["main"].assets.srcDir(layout.buildDirectory.dir("generated/webAssets"))
 }
 
 kotlin {
-    compilerOptions {
-        jvmTarget.set(JvmTarget.JVM_17)
+    compilerOptions { jvmTarget.set(JvmTarget.JVM_17) }
+}
+
+val tsbridgeAar = file("libs/tsbridge.aar")
+
+val copyWebApp by tasks.registering(Sync::class) {
+    from(rootProject.file("web/dist"))
+    into(layout.buildDirectory.dir("generated/webAssets/web"))
+}
+
+val checkTsbridge by tasks.registering {
+    doFirst {
+        if (!tsbridgeAar.exists()) {
+            throw GradleException(
+                "android/app-host/libs/tsbridge.aar fehlt. Erst ./android/tailscale-bridge/build.sh ausführen (Go + Android NDK nötig).",
+            )
+        }
     }
 }
 
+tasks.named("preBuild") { dependsOn(copyWebApp, checkTsbridge) }
 
 dependencies {
     implementation(project(":android:core-ui"))
+    implementation(project(":backend:server"))
+    implementation(files(tsbridgeAar))
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.lifecycle.runtime.compose)
+    implementation(libs.androidx.datastore.preferences)
+    implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.zxing.core)
     debugImplementation(libs.compose.ui.tooling)
     debugImplementation(libs.compose.ui.test.manifest)
 

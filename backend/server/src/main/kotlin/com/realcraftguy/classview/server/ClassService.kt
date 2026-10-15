@@ -61,6 +61,9 @@ class ClassService(
 
     suspend fun hasInviteKey(): Boolean = read { data.inviteKeyHash != null }
 
+    /** Für die Statusanzeige der Host-App: Anzahl Klassen und beigetretener Geräte. */
+    suspend fun stats(): Pair<Int, Int> = read { data.classes.size to data.devices.count { it.removedAt == null } }
+
     /** Entfernt seit [maxIdleMs] unbenutzte Klassen samt Geräten und Bildern. */
     suspend fun cleanup(maxIdleMs: Long = 30L * 24 * 60 * 60 * 1000): Int = write {
         val cutoff = clock() - maxIdleMs
@@ -326,7 +329,8 @@ class ClassService(
 
     private fun snapshotLocked(cls: ClassRecord) = ClassSnapshot(
         id = cls.id, name = cls.name, teacherName = cls.teacherName,
-        code = cls.code, codeExpiresAt = cls.codeExpiresAt, joinPaused = cls.joinPaused, maxDevices = cls.maxDevices,
+        code = cls.code, codeExpiresAt = cls.codeExpiresAt, codeTtl = CodeTtl.valueOf(cls.codeTtl),
+        joinPaused = cls.joinPaused, maxDevices = cls.maxDevices,
         devices = data.devices.filter { it.classId == cls.id && it.removedAt == null }.sortedBy { it.joinedAt }.map {
             DeviceDto(it.id, it.displayName, it.avatarPreset, it.avatarFile != null, it.avatarVersion,
                 isOnline(it.id), it.lastSeenAt, it.joinedAt)

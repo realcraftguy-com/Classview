@@ -48,7 +48,7 @@ Wahrscheinlichkeit ≈ 1 : 8,9 Mio. Zusammen mit den Rate-Limits ist Durchprobie
 | Code nur zum Beitreten | Code-Endpunkt `POST /api/join` liefert nur ein eigenes Geräte-Token; alle anderen Endpunkte verlangen Lehrer- oder Geräte-Token |
 | Klassen anlegen nur mit Einladung | `POST /api/classes` verlangt den Host-Einladungsschlüssel; ohne ihn sieht ein Fremder nur die Startseite |
 | Code widerrufbar, erneuerbar, optional ablaufend | „Code erneuern“ (alter sofort ungültig), „Beitritt pausieren“, Ablaufzeit wählbar; bereits beigetretene Geräte verbinden sich mit ihrem Token und sind nicht betroffen |
-| Rate-Limits beim Beitritt | pro IP: 10 Versuche/min, 30 fehlgeschlagene/h → danach 1 h gesperrt; pro Code: 30 Beitritte/min; pro Klasse max. 40 Geräte; global: Fehlversuche überwacht. Klassen-Erstellung pro IP begrenzt. (Werte vorläufig, in Phase 3 festgelegt.) Hinweis: Zähler liegen im Speicher und beginnen nach Neustart neu. |
+| Rate-Limits beim Beitritt | Werte in `backend/server/.../RateLimiter.kt` (`Limits`): fehlgeschlagene Beitritte **30 je IP in 10 min** (nicht strenger, weil alle Geräte einer Schule sich eine öffentliche IP teilen und Tippfehler zusammenzählen), Beitrittsversuche 60 je IP und 60 je Code pro Minute (eine ganze Klasse tritt oft gleichzeitig bei), global 300 Fehlversuche pro Minute, max. 40 Geräte je Klasse; Klassen anlegen 10 je IP und Stunde; Wiederherstellung 10 Fehlversuche je IP in 10 min; Profilbilder 10 je Gerät und Minute. Bei 31⁶ Codes sind 30 Versuche je 10 Minuten aussichtslos. Antwort 429 mit `Retry-After`. Zähler liegen im Speicher und beginnen nach Neustart neu. |
 | Anfrage nur an genau ein Gerät, serverseitig geprüft | `share.request` prüft: Lehrer-Token gültig und nicht widerrufen → gehört zu `classId` der WS-Verbindung → `deviceId` gehört zu dieser Klasse, ist nicht entfernt, ist online. Nachricht geht nur an die eine WS-Verbindung dieses Geräts. |
 | App prüft Zugehörigkeit | App verwirft `share.requested`, wenn `classId` nicht der aktuell verbundenen Klasse entspricht oder `expiresAt` vorbei ist |
 | Ablehnen ist endgültig | Endzustände sind unveränderlich (bedingtes `UPDATE … WHERE status='pending'`); App merkt sich beantwortete `requestId`s und reagiert auf keine zweite Nachricht dazu |
@@ -157,7 +157,15 @@ eine Bildschirmsperre haben und aktuell gehalten werden.
   (Backups sind absichtlich deaktiviert, damit Tokens nicht in Cloud-Backups landen).
 - Fällt das S21 FE, das Internet zuhause oder Tailscale aus, funktioniert ClassroomView in der Schule nicht.
 
-### 4.10 Datenschutz
+### 4.10 Debug-Signaturschlüssel im Repository
+
+Damit neue Versionen (auch aus GitHub Actions) ohne Datenverlust über die alte installiert werden können,
+liegt ein **Debug**-Signaturschlüssel in `android/debug.keystore`. Wer Zugriff auf das Repository hat, könnte
+damit eine veränderte App signieren, die Android als Update akzeptiert – sie müsste dir aber erst
+untergeschoben werden. Installiere APKs daher nur aus deinem eigenen Repository. `TODO:` In Phase 10
+Release-Builds mit einem Schlüssel signieren, der als GitHub-Secret hinterlegt ist.
+
+### 4.11 Datenschutz
 
 Es werden Namen und ggf. Fotos von (oft minderjährigen) Schülern verarbeitet. Für den Einsatz in einer
 Schule sind die dortigen Datenschutzvorgaben (DSGVO, Vorgaben des Schulträgers, ggf. Einwilligungen) zu
@@ -168,27 +176,29 @@ Namen, eingebaute Avatare statt Fotos, kurze Aufbewahrungsfristen. Positiv: Alle
 
 ## 5. Sicherheits-Checkliste
 
-Wird ab Phase 3 abgehakt.
+Abgehakt ist, was umgesetzt und getestet ist.
 
 **Server (Host-App)**
-- [ ] Tokens und Codes mit `SecureRandom`
-- [ ] Nur Hashes von Tokens in der Datendatei
-- [ ] Code-Alphabet ohne 0/O, 1/I/L; Eingabe normalisiert (Großschreibung, Trennzeichen entfernt)
-- [ ] Rate-Limits Beitritt (IP, Code), Klassen-Erstellung (IP), Anfragen (Gerät)
-- [ ] Jede Lehrer-Aktion prüft Token ↔ Klasse ↔ Gerät
+- [x] Tokens und Codes mit `SecureRandom` *(Phase 3)*
+- [x] Nur Hashes von Tokens in der Datendatei *(Phase 3)*
+- [x] Code-Alphabet ohne 0/O, 1/I/L; Eingabe normalisiert (Großschreibung, Trennzeichen entfernt) *(Phase 3)*
+- [x] Rate-Limits Beitritt (IP, Code), Klassen-Erstellung (IP), Wiederherstellung *(Phase 3)*
+- [ ] Rate-Limit für Freigabe-Anfragen je Gerät *(Phase 6)*
+- [x] Jede Lehrer-Aktion prüft Token ↔ Klasse ↔ Gerät *(Phase 3)*
 - [ ] Statusübergänge nur aus `pending`, Endzustände unveränderlich
 - [ ] `rtc.*` nur zwischen den zwei Teilnehmern einer offenen Sitzung
 - [ ] Aufräumen beim Start (offene Anfragen/Sitzungen beenden)
-- [ ] Bild-Upload: Größe, Format per Dekodierung, Maße, Neukodierung, Metadaten entfernt
-- [ ] Schema-Validierung aller Eingaben, WS-Nachrichtengröße begrenzt
-- [ ] Keine Geheimnisse in Logs
-- [ ] Alle Zustandsänderungen über einen Mutex serialisiert, Datei atomar geschrieben
+- [x] Bild-Upload: Größe, Format per Dekodierung, Maße, Neukodierung, Metadaten entfernt *(Phase 3)*
+- [x] Schema-Validierung aller REST-Eingaben, Längenbegrenzungen *(Phase 3)*
+- [ ] WS-Nachrichten validiert, Größe begrenzt *(Phase 5)*
+- [x] Keine Geheimnisse in Logs *(Phase 3)*
+- [x] Alle Zustandsänderungen über einen Mutex serialisiert, Datei atomar geschrieben *(Phase 3)*
 
 **Web**
-- [ ] CSP, `Referrer-Policy: no-referrer`
-- [ ] Recovery-Token nur im Fragment, nach Einlösen aus der Adresszeile entfernt
+- [x] CSP, `Referrer-Policy: no-referrer` *(Phase 3)*
+- [x] Recovery-Token nur im Fragment, nach Einlösen aus der Adresszeile entfernt *(Phase 3)*
 - [ ] Kein `getUserMedia`, Peer-Verbindung `recvonly`
-- [ ] Profilbilder nur per authentifiziertem `fetch`
+- [x] Profilbilder nur per authentifiziertem `fetch` *(Phase 3)*
 
 **Android**
 - [ ] Keine Kamera-/Mikrofon-Berechtigung im Manifest
@@ -196,15 +206,15 @@ Wird ab Phase 3 abgehakt.
 - [ ] Laufende Benachrichtigung während der Freigabe mit „Beenden“
 - [ ] `classId`-Prüfung eingehender Anfragen
 - [ ] Release-Build ohne Klartext-Verkehr
-- [ ] Backups deaktiviert
+- [x] Backups deaktiviert *(Phase 3)*
 - [ ] `TODO:` optional Token mit Android Keystore verschlüsseln
 
 **Host-App / Betrieb**
-- [ ] Tailscale-Zustand, Schlüssel und Auth-Key nur im App-privaten Speicher, nie geloggt
-- [ ] Ktor nur auf `127.0.0.1`; Funnel nur für Port 443 → Reverse-Proxy → Ktor
-- [ ] `X-Forwarded-For` nur vom lokalen Proxy akzeptiert
+- [x] Tailscale-Zustand, Schlüssel und Auth-Key nur im App-privaten Speicher, nie geloggt *(Phase 3)*
+- [x] Ktor nur auf `127.0.0.1`; Funnel nur für Port 443 → Reverse-Proxy → Ktor *(Phase 3)*
+- [x] `X-Forwarded-For` nur vom lokalen Proxy akzeptiert *(Phase 3)*
 - [ ] Auth-Key nach Einrichtung im Tailscale-Adminbereich widerrufen; Tailscale-Konto mit Zwei-Faktor-Anmeldung
-- [ ] Klassen anlegen nur mit Host-Einladungsschlüssel
-- [ ] Rate-Limits für alle unauthentifizierten Endpunkte (Internet!)
-- [ ] Datendatei und Profilbilder nur im App-privaten Speicher, Backups deaktiviert
+- [x] Klassen anlegen nur mit Host-Einladungsschlüssel *(Phase 3)*
+- [x] Rate-Limits für alle unauthentifizierten Endpunkte (Internet!) *(Phase 3)*
+- [x] Datendatei und Profilbilder nur im App-privaten Speicher, Backups deaktiviert *(Phase 3)*
 - [ ] S21 FE mit Bildschirmsperre und aktuellen Sicherheitsupdates
