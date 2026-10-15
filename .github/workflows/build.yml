@@ -41,8 +41,8 @@ jobs:
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;$NDK_VERSION" > /dev/null
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
 
-      - name: Server-Tests
-        run: ./gradlew :backend:server:test
+      - name: Tests (Server und Schüler-App gegen echten Server)
+        run: ./gradlew :backend:server:test :android:app-student:testDebugUnitTest
 
       - name: Web-App bauen
         working-directory: web
@@ -71,4 +71,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: test-reports
-          path: backend/server/build/reports/tests/
+          path: |
+            backend/server/build/reports/tests/
+            android/app-student/build/reports/tests/
