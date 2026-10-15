@@ -1,6 +1,9 @@
 package com.realcraftguy.classview.ui
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
@@ -41,6 +44,11 @@ enum class AvatarPreset(val key: String, val label: String, val background: Colo
     Blatt("blatt", "Blatt", Color(0xFFE2F3EE), Color(0xFF248A6E)),
     Wolke("wolke", "Wolke", Color(0xFFE3F0F7), Color(0xFF3580A3)),
     Planet("planet", "Planet", Color(0xFFF4E7DA), Color(0xFFAE6430)),
+    ;
+
+    companion object {
+        fun fromKey(key: String?): AvatarPreset? = entries.firstOrNull { it.key == key }
+    }
 }
 
 @Composable
@@ -50,6 +58,8 @@ fun Avatar(
     size: Dp,
     modifier: Modifier = Modifier,
     ring: Color? = null,
+    /** Eigenes Foto; hat Vorrang vor [preset]. */
+    image: ImageBitmap? = null,
 ) {
     val ringModifier = if (ring != null) Modifier.border(3.dp, ring, CircleShape) else Modifier
     Box(
@@ -60,7 +70,9 @@ fun Avatar(
             .background(preset?.background ?: ClassviewTheme.colors.surfaceMuted),
         contentAlignment = Alignment.Center,
     ) {
-        if (preset != null) {
+        if (image != null) {
+            Image(image, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.size(size))
+        } else if (preset != null) {
             Canvas(Modifier.size(size)) {
                 scale(this.size.width / 100f, this.size.height / 100f, pivot = Offset.Zero) {
                     drawPreset(preset)

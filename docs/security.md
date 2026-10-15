@@ -201,11 +201,11 @@ Abgehakt ist, was umgesetzt und getestet ist.
 - [x] Profilbilder nur per authentifiziertem `fetch` *(Phase 3)*
 
 **Android**
-- [ ] Keine Kamera-/Mikrofon-Berechtigung im Manifest
+- [x] Keine Kamera-/Mikrofon-Berechtigung im Manifest *(Phase 4)*
 - [ ] Systemdialog bei jeder Freigabe, Intent nie wiederverwendet
 - [ ] Laufende Benachrichtigung während der Freigabe mit „Beenden“
 - [ ] `classId`-Prüfung eingehender Anfragen
-- [ ] Release-Build ohne Klartext-Verkehr
+- [x] Release-Build ohne Klartext-Verkehr *(Phase 4)*
 - [x] Backups deaktiviert *(Phase 3)*
 - [ ] `TODO:` optional Token mit Android Keystore verschlüsseln
 

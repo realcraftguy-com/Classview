@@ -22,25 +22,24 @@ gestrichelten Knöpfe die Zustände der Anfrage (bereit, wartet, abgelehnt, abge
 
 ## Schüler-App (Xiaomi Pad 7)
 
-Quelle: `android/app-student/.../mockup/StudentScreens.kt` (mit `@Preview`). Bilder erzeugt mit
-`./gradlew :android:app-student:recordRoborazziDebug`.
+Seit Phase 4 sind das die echten Bildschirme mit Beispielzustand (`android/app-student/.../ui/StudentScreens.kt`).
+Bilder erzeugt mit `./gradlew :android:app-student:recordRoborazziDebug`. Der Freigabe-Dialog und die
+Benachrichtigungs-Illustration aus Phase 2 kommen in Phase 6 wieder dazu.
 
 | Bildschirm | Bild |
 |---|---|
 | Start | ![](android/student/01-start.png) |
+| Start, noch kein Profil, mit Hinweis | ![](android/student/01b-start-neu.png) |
 | Mein Profil | ![](android/student/02-profil.png) |
 | Beitreten | ![](android/student/03-beitreten.png) |
 | Beitreten – lädt | ![](android/student/04-beitreten-laedt.png) |
 | Beitreten – falscher Code | ![](android/student/05-beitreten-fehler.png) |
+| Beitreten – noch kein Server | ![](android/student/05b-beitreten-ohne-server.png) |
+| Server-Adresse | ![](android/student/05c-server-adresse.png) |
 | Beigetreten | ![](android/student/06-beigetreten.png) |
 | Beigetreten, dunkel | ![](android/student/07-beigetreten-dunkel.png) |
-| Hochformat, Verbindung weg | ![](android/student/08-beigetreten-hochformat-verbindung-weg.png) |
-| Freigabe-Anfrage | ![](android/student/09-freigabe-anfrage.png) |
-| Freigabe-Anfrage, dunkel | ![](android/student/10-freigabe-anfrage-dunkel.png) |
-| Freigabe aktiv | ![](android/student/11-freigabe-aktiv.png) |
-| Freigabe aktiv, Hochformat | ![](android/student/12-freigabe-aktiv-hochformat.png) |
+| Hochformat, keine Verbindung | ![](android/student/08-beigetreten-hochformat-offline.png) |
 | HyperOS-Hinweis | ![](android/student/13-hyperos-hinweis.png) |
-| Benachrichtigungen (Illustration) | ![](android/student/14-benachrichtigungen.png) |
 
 ## Host-App (Galaxy S21 FE)
 

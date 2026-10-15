@@ -282,3 +282,5 @@ body {
 .fullcode { position: fixed; }
 .fullcode .eyebrow { font-size: 15px; }
 .input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.fullcode .server-host { margin-top: 18px; color: var(--text-2); font-size: 15px; }
+.fullcode .server-host strong { font-family: var(--mono); color: var(--text); font-weight: 600; }

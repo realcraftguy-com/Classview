@@ -15,7 +15,7 @@ HTTPS-Zertifikat); das Video selbst bleibt im Schul-WLAN.
 | ClassroomView (Schüler-App) | Xiaomi Pad 7 (Schule) |
 | Lehrer-Web-App in Safari | iPad der Lehrerin (Schule) |
 
-> Status: **Phase 3 – Server, Host-App und Lehrer-Web-App in Review.** Einrichtung und Test: [`docs/setup.md`](docs/setup.md).
+> Status: **Phase 4 – Schüler-App (Profil, Avatar, Beitritt) in Review.** Einrichtung und Test: [`docs/setup.md`](docs/setup.md).
 
 ## Repository-Struktur (geplant)
 
@@ -43,8 +43,8 @@ HTTPS-Zertifikat); das Video selbst bleibt im Schul-WLAN.
 |----|-------------------------------------------|---------------|
 | 1  | Architektur                               | fertig        |
 | 2  | Mockups (HTML + Compose-Previews)         | fertig        |
-| 3  | Server + Host-App + Lehrer-Web: Klassen, Codes, Tokens, Beitritt | in Review |
-| 4  | Android-Basis: Profil, Avatar, Beitritt   | offen         |
+| 3  | Server + Host-App + Lehrer-Web: Klassen, Codes, Tokens, Beitritt | fertig (Gerätetest offen) |
+| 4  | Android-Basis: Profil, Avatar, Beitritt   | in Review     |
 | 5  | Echtzeit-Schülerliste                     | offen         |
 | 6  | Freigabe-Anfragen (ohne Stream)           | offen         |
 | 7  | WebRTC-Einzelstream                       | offen         |

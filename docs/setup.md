@@ -1,14 +1,14 @@
 # Einrichtung und Test
 
-Stand: Phase 3. Diese Anleitung wächst mit jeder Phase.
+Stand: Phase 4. Diese Anleitung wächst mit jeder Phase.
 
 ## Überblick
 
 | Gerät | Was | Phase 3 |
 |---|---|---|
 | Galaxy S21 FE (zuhause) | **ClassroomView Host** – Server + Lehrer-Website + Tailscale | voll funktionsfähig |
-| iPad der Lehrerin | Safari – Lehrer-Web-App | Klassen anlegen, Code zeigen, Schülerliste (lädt alle 5 s neu) |
-| Xiaomi Pad 7 | **ClassroomView** – Schüler-App | noch Mockup-Galerie (echter Beitritt kommt in Phase 4) |
+| iPad der Lehrerin | Safari – Lehrer-Web-App | Klassen anlegen, Code zeigen, Schülerliste (lädt alle 5 s neu; live ab Phase 5) |
+| Xiaomi Pad 7 | **ClassroomView** – Schüler-App | Profil, Avatar/Foto, Beitritt per Code, gespeicherte Klasse, HyperOS-Hinweise |
 
 ## 1. APKs besorgen
 
@@ -88,7 +88,42 @@ Klappt etwas nicht: oben rechts **Protokoll** öffnen – dort steht, woran es h
 | Host-App zeigt unter „Auf diesem Server“ | 1 Klasse |
 | Host-App ausschalten, iPad neu laden | „Server nicht erreichbar“ |
 
-Schülerbeitritt per App folgt in Phase 4. Wer es schon jetzt ausprobieren will, kann per `curl` beitreten:
+## 6. Schüler-App auf dem Xiaomi Pad 7 (Phase 4)
+
+1. **ClassroomView** installieren und öffnen.
+2. **Profil anlegen**: Name (Vorname oder Spitzname), dann einen Avatar wählen oder **Foto aus der Galerie**
+   (Android-Fotoauswahl, keine Speicher-Berechtigung nötig). → **Fertig**.
+3. **Klasse beitreten**. Beim ersten Mal fragt die App nach der **Server-Adresse**: Sie steht auf dem iPad
+   unter dem großen Code (z. B. `classview.tail4b2c1.ts.net`). Die App prüft sie und merkt sie sich.
+4. Code eingeben. Großschreibung passiert automatisch, Trennzeichen sind egal; tippst du 0, O, 1, I oder L,
+   weist die App darauf hin, dass es diese Zeichen in Codes nicht gibt.
+5. Nach dem Beitritt zeigt die App die **HyperOS-Hinweise**. Die Knöpfe öffnen die passenden Einstellungen;
+   „Autostart“ und „App sperren“ kann die App nicht selbst prüfen – dort tippst du auf den Kreis, wenn es
+   erledigt ist. Später erreichbar über **Einstellungen für HyperOS**.
+
+### Test für Phase 4
+
+| Schritt | Erwartung |
+|---|---|
+| Ohne Namen „Klasse beitreten“ | nicht möglich, App führt zuerst ins Profil |
+| Falsche Server-Adresse eintragen | verständliche Fehlermeldung, nichts wird gespeichert |
+| Falschen Code eingeben | „Diesen Code gibt es nicht …“ |
+| Abgelaufenen Code (am iPad Ablauf „1 Stunde“ und warten) bzw. pausierten Beitritt | eigene Meldung |
+| Richtigen Code eingeben | „Verbunden“, Klassenname und Lehrkraft; auf dem iPad erscheint die Karte nach ≤ 5 s mit Name und Bild |
+| Profil ändern (Name, Avatar, Foto) | iPad zeigt die Änderung nach ≤ 5 s |
+| App schließen (aus „Zuletzt verwendet“ wischen) und neu öffnen | App ist ohne Code wieder in der Klasse |
+| WLAN aus, Profil ändern, WLAN an | „Keine Verbindung“, danach wird die Änderung automatisch übertragen |
+| Am iPad „Code erneuern“ | Tablet bleibt in der Klasse |
+| Am iPad Schüler entfernen | Tablet zeigt nach ≤ 30 s „Du wurdest aus der Klasse entfernt.“ |
+| „Klasse verlassen“ | Karte verschwindet auf dem iPad |
+| Tablet drehen | Hoch- und Querformat funktionieren |
+
+Noch nicht in Phase 4: dauerhafte Verbindung im Hintergrund mit Statusleisten-Symbol und sofortiger
+Online-Status (Phase 5), Freigabe-Anfragen (Phase 6).
+
+### Ohne Tablet testen
+
+Beitreten geht auch per `curl`:
 
 ```bash
 curl -X POST https://classview.<tailnet>.ts.net/api/join \
@@ -97,10 +132,11 @@ curl -X POST https://classview.<tailnet>.ts.net/api/join \
 
 Der Schüler erscheint dann innerhalb von 5 Sekunden auf dem iPad.
 
-## 6. Entwickeln am PC
+## 7. Entwickeln am PC
 
 ```bash
 ./gradlew :backend:server:test          # Server-Tests
+./gradlew :android:app-student:testDebugUnitTest   # Schüler-App gegen echten Server, Screenshots
 ./gradlew :backend:server:run           # Server auf http://127.0.0.1:8080, Einladungslink steht in der Ausgabe
 cd web && npm ci && npm run dev         # Web-App mit Hot-Reload (leitet /api an Port 8080 weiter)
 ./android/tailscale-bridge/build.sh     # tsbridge.aar (Go + Android NDK nötig)

@@ -243,6 +243,7 @@ export function CodeFullscreen({ saved }: { saved: SavedClass }) {
           <div className="eyebrow">{snap.name}</div>
           <div className="big"><CodeText code={snap.code} /></div>
           <p className="steps">Öffne ClassroomView auf deinem Tablet, tippe auf „Klasse beitreten“ und gib diesen Code ein.</p>
+          <p className="server-host">Server-Adresse (nur beim ersten Mal): <strong>{location.host}</strong></p>
           {snap.joinPaused && <p className="error-text">Der Beitritt ist gerade pausiert.</p>}
           <div className="live-count"><span className="dot on" /> {snap.devices.length} Schüler beigetreten</div>
         </div>
