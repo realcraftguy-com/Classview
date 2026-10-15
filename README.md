@@ -6,8 +6,8 @@ erscheinen live mit Name und Profilbild. Die Lehrerin kann eine Bildschirmfreiga
 der Schüler zustimmt **und** den Android-Systemdialog bestätigt, sieht sie den Bildschirm live (WebRTC).
 
 Gehostet wird alles von einer **Host-App auf einem Android-Handy zuhause** (Galaxy S21 FE 5G, ohne Root).
-Die Schule erreicht es übers Internet unter einer kostenlosen DuckDNS-Adresse mit Let's-Encrypt-Zertifikat;
-das Video selbst bleibt im Schul-WLAN.
+Die Schule erreicht es übers Internet über **Tailscale Funnel** (ohne Router-Einstellungen, gültiges
+HTTPS-Zertifikat); das Video selbst bleibt im Schul-WLAN.
 
 | APK / Oberfläche | Gerät |
 |---|---|
@@ -15,7 +15,7 @@ das Video selbst bleibt im Schul-WLAN.
 | ClassroomView (Schüler-App) | Xiaomi Pad 7 (Schule) |
 | Lehrer-Web-App in Safari | iPad der Lehrerin (Schule) |
 
-> Status: **Phase 1 – Architektur (Revision 3).** Es gibt noch keinen Code.
+> Status: **Phase 1 – Architektur abgeschlossen (Revision 4), Phase 2 – Mockups.**
 
 ## Repository-Struktur (geplant)
 
@@ -38,8 +38,8 @@ das Video selbst bleibt im Schul-WLAN.
 
 | #  | Phase                                     | Status        |
 |----|-------------------------------------------|---------------|
-| 1  | Architektur                               | in Review     |
-| 2  | Mockups (HTML + Compose-Previews)         | offen         |
+| 1  | Architektur                               | fertig        |
+| 2  | Mockups (HTML + Compose-Previews)         | in Arbeit     |
 | 3  | Server + Host-App: Klassen, Codes, Tokens, Beitritt | offen |
 | 4  | Android-Basis: Profil, Avatar, Beitritt   | offen         |
 | 5  | Echtzeit-Schülerliste                     | offen         |

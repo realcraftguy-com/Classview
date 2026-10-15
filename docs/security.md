@@ -1,6 +1,6 @@
 # Sicherheit
 
-Stand: Phase 1, Revision 3 (Host-App auf dem Galaxy S21 FE zuhause, aus dem Internet erreichbar). Die Checkliste am Ende wird in jeder Phase fortgeschrieben und in Phase 10
+Stand: Phase 1, Revision 4 (Host-App auf dem Galaxy S21 FE zuhause, öffentlich erreichbar über Tailscale Funnel). Die Checkliste am Ende wird in jeder Phase fortgeschrieben und in Phase 10
 abgeschlossen.
 
 ---
@@ -30,8 +30,8 @@ im selben WLAN; wer das Host-Handy (S21 FE) in der Hand hat.
 | **Geräte-ID** | UUIDv4 | DataStore | Klartext | keine – nur Zuordnung |
 | **Geräte-Token** | 32 Byte CSPRNG | DataStore (App-privat, nicht im Backup) | SHA-256-Hash | als dieses Gerät verbinden, eigenes Profil ändern, auf Anfragen antworten |
 | **Host-Einladungsschlüssel** | 32 Byte `SecureRandom`, in der Host-App erneuerbar | im Einladungslink (Fragment) und `localStorage` der Lehrer-Web-App | SHA-256-Hash | **Klassen anlegen** – sonst könnte jeder im Internet Klassen auf deinem Server anlegen |
-| **DuckDNS-Token** | von DuckDNS | – | App-privater Speicher des S21 FE | Adresse ändern: Wer es hat, kann `…duckdns.org` auf einen eigenen Server zeigen lassen |
-| **TLS-Schlüssel** (Let's Encrypt) | auf dem S21 FE erzeugt | – | App-privater Speicher, verlässt das Gerät nie | Server-Identität |
+| **Tailscale-Auth-Key** | im Tailscale-Adminbereich erzeugt, einmalig in die Host-App kopiert | – | nach der Anmeldung nicht mehr nötig; Knotenschlüssel im App-privaten Speicher | ein Gerät in deinem Tailnet anmelden – Auth-Key nach Gebrauch im Adminbereich widerrufen bzw. Einmal-Key verwenden |
+| **TLS-Schlüssel** (von `tsnet` verwaltet) | auf dem S21 FE erzeugt | – | App-privater Speicher, verlässt das Gerät nie | Server-Identität für `classview.….ts.net` |
 
 Der Wiederherstellungs-Token steht im **URL-Fragment** (`#…`). Fragmente werden von Browsern nicht an den
 Server gesendet, landen also weder in Server- noch in Proxy-Logs und nicht im `Referer`.
@@ -59,7 +59,7 @@ Wahrscheinlichkeit ≈ 1 : 8,9 Mio. Zusammen mit den Rate-Limits ist Durchprobie
 | Systemabfrage nicht umgehen | jede Sitzung startet mit `createScreenCaptureIntent()`; Ergebnis-Intent wird nie gespeichert oder wiederverwendet; laufende Benachrichtigung + Android-Statusleisten-Hinweis während der Aufnahme |
 | Profilbilder geschützt | nur über `GET …/avatar` mit Lehrer-Token derselben Klasse; keine öffentlichen oder erratbaren URLs; Gerät verkleinert auf ≤ 512 px; Server: max. 1 MB, nur JPEG/PNG/WebP (per Dekodierung geprüft, nicht per Dateiendung), max. 512 × 512, wird neu kodiert und von Metadaten (EXIF/GPS) befreit |
 | Stream endet sofort | siehe `architecture.md` §6.3 und §7 |
-| Transport | nur HTTPS/WSS mit Let's-Encrypt-Zertifikat für die DuckDNS-Adresse (`architecture.md` §5.2), normale Zertifikatsprüfung auf allen Geräten. Klartext-HTTP nur im Debug-Modus auf dem PC. Release-App erlaubt keinen Klartext-Verkehr. |
+| Transport | nur HTTPS/WSS; TLS endet auf dem S21 FE (Tailscale Funnel leitet nur den verschlüsselten Strom weiter, `architecture.md` §5.1); normale Zertifikatsprüfung auf allen Geräten. Ktor lauscht nur auf `127.0.0.1`. Klartext-HTTP nur im Debug-Modus auf dem PC. Release-App erlaubt keinen Klartext-Verkehr. |
 | Header | `Content-Security-Policy` (nur eigene Skripte, `connect-src 'self'`), `Referrer-Policy: no-referrer`, `X-Content-Type-Options: nosniff`, `frame-ancestors 'none'`, HSTS |
 | Logs | Tokens, Codes-Fehlversuche mit vollem Code und Bilder werden nicht geloggt; IPs nur gekürzt bzw. nur für Rate-Limits im Speicher |
 | Eingaben | alle REST-Bodies und WS-Nachrichten schema-validiert, Längenbegrenzungen für Namen, max. WS-Nachrichtengröße (z. B. 64 KB; SDP passt hinein) |
@@ -139,26 +139,30 @@ eine Bildschirmsperre haben und aktuell gehalten werden.
 
 ### 4.9 Server zuhause, offen im Internet
 
-- Durch die Portfreigabe ist der Server auf dem S21 FE **für jeden im Internet erreichbar**. Das ist nötig,
-  damit die Schule ihn erreicht. Die Adresse steht zudem in öffentlichen Zertifikatsprotokollen
-  (Certificate Transparency) und wird von Scannern schnell gefunden.
+- Über Tailscale Funnel ist der Server **für jeden im Internet erreichbar** – das ist nötig, damit die
+  Schule ihn erreicht. Die Adresse steht in öffentlichen Zertifikatsprotokollen und wird von Scannern
+  gefunden.
 - Ohne Code, Token oder Einladungsschlüssel kann ein Fremder nur die Startseite laden und Beitrittscodes
-  raten (rate-limitiert, siehe §2).
-- Freigegeben wird **nur ein Port zu nur einem Gerät**. Andere Geräte in deinem Heimnetz sind nicht
-  erreichbar. Die Host-App läuft in Androids App-Sandbox; eine Sicherheitslücke im Server würde zuerst nur
-  die Daten dieser App betreffen.
+  raten (rate-limitiert, siehe §3; Achtung: alle Geräte der Schule teilen sich eine IP, siehe
+  `architecture.md` §5.2).
+- Erreichbar ist **nur dieser eine Dienst**, nicht das Handy selbst und nicht dein Heimnetz. Die Host-App
+  läuft in Androids App-Sandbox; eine Sicherheitslücke im Server würde zuerst nur die Daten dieser App
+  betreffen.
+- **Abhängigkeit von Tailscale:** Wer dein Tailscale-Konto übernimmt, könnte den Knoten umleiten →
+  Zwei-Faktor-Anmeldung beim Konto (Google/GitHub) einschalten. Tailscale selbst kann die Inhalte nicht
+  lesen, da TLS auf dem Handy endet.
 - Empfehlung: Auf dem S21 FE möglichst keine sensiblen privaten Daten, Bildschirmsperre, Updates
   installieren. Wenn ClassroomView nicht gebraucht wird (Ferien), Server in der Host-App stoppen.
 - Daten liegen nur auf dem S21 FE. Geht es verloren oder wird die App gelöscht, sind alle Klassen weg
   (Backups sind absichtlich deaktiviert, damit Tokens nicht in Cloud-Backups landen).
-- Fällt das S21 FE oder das Internet zuhause aus, funktioniert ClassroomView in der Schule nicht.
+- Fällt das S21 FE, das Internet zuhause oder Tailscale aus, funktioniert ClassroomView in der Schule nicht.
 
 ### 4.10 Datenschutz
 
 Es werden Namen und ggf. Fotos von (oft minderjährigen) Schülern verarbeitet. Für den Einsatz in einer
 Schule sind die dortigen Datenschutzvorgaben (DSGVO, Vorgaben des Schulträgers, ggf. Einwilligungen) zu
 beachten. Das ist keine Rechtsberatung. Technisch empfehlenswert: Vornamen oder Spitznamen statt voller
-Namen, eingebaute Avatare statt Fotos, kurze Aufbewahrungsfristen. Positiv: Alle Daten liegen bei dir zuhause auf dem S21 FE; DuckDNS erfährt nur deine IP-Adresse, Let's Encrypt nur die Adresse `…duckdns.org`.
+Namen, eingebaute Avatare statt Fotos, kurze Aufbewahrungsfristen. Positiv: Alle Daten liegen bei dir zuhause auf dem S21 FE. Tailscale sieht nur Verbindungsdaten (IP-Adressen, Zeitpunkte, Datenmenge), keine Inhalte.
 
 ---
 
@@ -196,9 +200,10 @@ Wird ab Phase 3 abgehakt.
 - [ ] `TODO:` optional Token mit Android Keystore verschlüsseln
 
 **Host-App / Betrieb**
-- [ ] TLS-Schlüssel und DuckDNS-Token nur im App-privaten Speicher, nie geloggt
-- [ ] Zertifikat wird automatisch erneuert, Host-App warnt vor Ablauf
-- [ ] FritzBox: **nur** Port 443 → S21 FE:8443 freigegeben, keine weiteren Freigaben, kein „Exposed Host“
+- [ ] Tailscale-Zustand, Schlüssel und Auth-Key nur im App-privaten Speicher, nie geloggt
+- [ ] Ktor nur auf `127.0.0.1`; Funnel nur für Port 443 → Reverse-Proxy → Ktor
+- [ ] `X-Forwarded-For` nur vom lokalen Proxy akzeptiert
+- [ ] Auth-Key nach Einrichtung im Tailscale-Adminbereich widerrufen; Tailscale-Konto mit Zwei-Faktor-Anmeldung
 - [ ] Klassen anlegen nur mit Host-Einladungsschlüssel
 - [ ] Rate-Limits für alle unauthentifizierten Endpunkte (Internet!)
 - [ ] Datendatei und Profilbilder nur im App-privaten Speicher, Backups deaktiviert

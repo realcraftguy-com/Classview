@@ -1,21 +1,22 @@
 # Architektur
 
-Stand: Phase 1, Revision 3. Dieses Dokument beschreibt *was* gebaut wird und *warum*. Konkrete
+Stand: Phase 1, Revision 4 (abgenommen). Dieses Dokument beschreibt *was* gebaut wird und *warum*. Konkrete
 Bibliotheksversionen werden erst in der Phase festgelegt, in der sie eingeführt werden, und dann gegen npm
 bzw. Maven Central geprüft. Wo ich mir bei einer API oder einem Plattformverhalten nicht sicher bin, steht
 das als **Zu prüfen** dabei; alle Prüfpunkte sind in §13 gesammelt.
 
 ### Änderungen
 
-| Revision 1 | Revision 2 | **Revision 3 (aktuell)** | Grund |
+| Revision 1 | Revision 2 | Revision 3 | **Revision 4 (aktuell)** |
 |---|---|---|---|
-| Server auf gemietetem VPS | Host-App auf dem S21 FE, im selben WLAN | **Host-App auf dem S21 FE zuhause**, aus der Schule übers Internet erreichbar | S21 FE bleibt zuhause (≈ 3 km), kein Mietserver, Handy nicht mitnehmen |
-| Node.js | Kotlin/Ktor | Kotlin/Ktor | läuft in der Host-App und auf dem PC |
-| Let's Encrypt über eigene Domain | eigene lokale CA, Profil aufs iPad | **Let's Encrypt** über kostenlose **DuckDNS**-Adresse | echtes Zertifikat, auf dem iPad der Lehrerin muss nichts installiert werden |
-| – | Host-Suche per mDNS | entfällt – feste Adresse `…duckdns.org` | |
-| coturn | Mini-STUN als Fallback | Video weiterhin direkt im Schul-WLAN; Fallback in Phase 7 | Geräte sehen sich im Schul-WLAN |
-| SQLite | JSON-Datei | JSON-Datei | |
-| – | – | **Klassen anlegen nur mit Host-Einladungslink** | der Server ist jetzt öffentlich erreichbar |
+| Server auf gemietetem VPS | Host-App auf dem S21 FE im selben WLAN | S21 FE zuhause + FritzBox-Portfreigabe | **S21 FE zuhause, erreichbar über Tailscale Funnel** – ohne Zugriff auf den Router |
+| Node.js | Kotlin/Ktor | Kotlin/Ktor | Kotlin/Ktor (ohne eigenes TLS, nur `127.0.0.1`) |
+| Let's Encrypt, eigene Domain | eigene CA, Profil aufs iPad | Let's Encrypt über DuckDNS | **Zertifikat automatisch über Tailscale**, Adresse `…ts.net`; auf dem iPad nichts zu installieren |
+| coturn | Mini-STUN | Video im Schul-WLAN | Video im Schul-WLAN |
+
+Gründe: S21 FE bleibt zuhause (≈ 3 km von der Schule), am Heim-Router darf nichts geändert werden, kein
+Mietserver, Handy nicht mitnehmen. Seit Revision 3 gilt außerdem: **Klassen anlegen nur mit
+Host-Einladungslink**, weil der Server öffentlich erreichbar ist.
 
 ---
 
@@ -23,30 +24,28 @@ das als **Zu prüfen** dabei; alle Prüfpunkte sind in §13 gesammelt.
 
 ```mermaid
 flowchart LR
-    subgraph HOME["Zuhause · Vodafone · FritzBox"]
-        FB["FritzBox<br/>Portfreigabe 443 → 8443"]
+    subgraph HOME["Zuhause · Router bleibt unverändert"]
         subgraph HOST["Galaxy S21 FE · Host-App"]
-            K["Ktor-Server<br/>HTTPS · WSS"]
+            TS["Tailscale (eingebettet)<br/>TLS-Ende · Funnel"]
+            K["Ktor-Server<br/>nur 127.0.0.1"]
             WA["Web-App-Dateien"]
             ST[("JSON-Datei<br/>+ Profilbilder")]
         end
     end
 
-    DNS["DuckDNS<br/>meineklasse.duckdns.org"]
-    LE["Let's Encrypt"]
+    REL["Tailscale-Funnel-Relais<br/>leitet verschlüsselt weiter"]
 
     subgraph SCHOOL["Schule · gemeinsames WLAN"]
         W["iPad · Safari<br/>Lehrer-Web-App"]
         A["Xiaomi Pad 7<br/>Schüler-App"]
     end
 
-    W -->|"HTTPS + WSS übers Internet"| FB
-    A -->|"HTTPS + WSS übers Internet"| FB
-    FB --> K
+    W -->|"https://classview.….ts.net"| REL
+    A -->|"https://classview.….ts.net"| REL
+    TS -->|"ausgehende Verbindung"| REL
+    TS --> K
     K --> WA
     K --> ST
-    K -.->|"meldet aktuelle IP"| DNS
-    K -.->|"holt Zertifikat"| LE
     A -.->|"WebRTC-Video direkt im Schul-WLAN"| W
 ```
 
@@ -54,7 +53,7 @@ flowchart LR
 
 1. **Der Server ist die einzige Autorität** für Klassen, Mitgliedschaften, Anfragen und Sitzungen.
 2. **Video fließt nie durch den Server.** Übers Internet zum S21 FE gehen nur Steuerdaten und Profilbilder
-   (wenige KB/s). Das Video geht direkt vom Tablet zum iPad im Schul-WLAN, verschlüsselt. Nichts wird
+   (wenige KB/s), Ende-zu-Ende verschlüsselt bis aufs Handy. Das Video geht direkt vom Tablet zum iPad im Schul-WLAN, verschlüsselt. Nichts wird
    aufgezeichnet.
 3. **Zustimmung ist zweistufig und liegt beim Schülergerät:** App-Dialog *und* Android-Systemdialog.
 4. **Jede Phase ist lauffähig.** Der Server läuft ab Phase 3 auch auf dem PC, Phase 3–6 brauchen kein WebRTC.
@@ -66,11 +65,11 @@ flowchart LR
 | Teil | Wahl | Begründung |
 |---|---|---|
 | Server | **Kotlin + Ktor** (Server-Framework von JetBrains), reines JVM-Modul | siehe §2.1 |
-| HTTP-Engine | Ktor **Netty**-Engine mit TLS | Die CIO-Engine von Ktor kann serverseitig kein TLS. **Zu prüfen in Phase 3** (Spike gleich zu Beginn): Netty mit TLS auf Android. Fallback: CIO auf `127.0.0.1` plus kleiner TLS-Vorschalter mit Androids `SSLServerSocket` in derselben App. |
+| HTTP-Engine | Ktor **CIO**-Engine, lauscht nur auf `127.0.0.1` | TLS übernimmt Tailscale, daher reicht die schlanke, rein in Kotlin geschriebene Engine |
 | WebSocket | Ktor-WebSockets | Browser nutzt die native `WebSocket`-API, Android **OkHttp** |
 | Serialisierung | **`kotlinx.serialization`** | gemeinsames Modul `protocol` für Server und Schüler-App → beide Seiten benutzen dieselben Nachrichtenklassen |
 | Datenhaltung | Zustand im Speicher, Änderungen sofort als JSON-Datei gespeichert (erst temporäre Datei, dann umbenennen = atomar); Profilbilder als Dateien | Bei ≤ 40 Schülern je Klasse sind das wenige KB. Kein Datenbanktreiber, der sich zwischen Android und PC unterscheidet. Alle Änderungen laufen nacheinander über einen Mutex, damit z. B. „Annehmen“ und „Ablaufen“ nie gleichzeitig passieren. Hinter einer Schnittstelle, später austauschbar gegen SQLite. |
-| Zertifikat | **Let's Encrypt** per ACME mit DNS-Prüfung über die DuckDNS-API (TXT-Eintrag) | echtes, überall gültiges Zertifikat; Port 80 muss nicht geöffnet werden. **Zu prüfen in Phase 3:** welcher ACME-Client auf Android läuft (`acme4j` ist der Java-Standard; ob die aktuelle Version auf Android läuft, prüfe ich). Fallback: schlanke eigene ACME-Umsetzung. |
+| Erreichbarkeit + Zertifikat | **Tailscale Funnel** über die Go-Bibliothek **`tsnet`**, per `gomobile` als Android-Bibliothek eingebunden | Das Handy baut die Verbindung selbst nach außen auf → keine Portfreigabe. `tsnet` holt ein gültiges Zertifikat für `classview.<tailnet>.ts.net`; die TLS-Verbindung endet **auf dem Handy**, das Relais sieht nur verschlüsselte Daten. `tsnet` arbeitet im Userspace, braucht also keine VPN-Berechtigung. Ein kleiner Go-Reverse-Proxy (inkl. WebSocket) reicht die Anfragen an Ktor auf `127.0.0.1` weiter. **Zu prüfen zu Beginn von Phase 3** (Machbarkeitstest), siehe §13. |
 | Bildprüfung | Android `BitmapFactory` (Host) bzw. `javax.imageio` (PC) hinter einer Schnittstelle | dekodieren, Maße prüfen, **neu kodieren** (entfernt EXIF/GPS) |
 | Tests Server | JUnit 5 + Ktor `testApplication` | laufen auf dem PC und in CI, ohne Handy |
 | Lehrer-Web | React + TypeScript + Vite, eigenes CSS mit CSS-Variablen | Build wird in die Host-APK gepackt |
@@ -78,7 +77,7 @@ flowchart LR
 | QR-Code | npm-Paket `qrcode` (Web) bzw. ZXing-Core (Host-App) | Host-App zeigt den Einladungslink für die Lehrerin auch als QR |
 | Android allgemein | Kotlin, Jetpack Compose, Material 3, eine Activity je App, Navigation Compose | |
 | Android-Netzwerk | **OkHttp** (REST + WebSocket) | |
-| Feste Adresse | **DuckDNS** (kostenloser DynDNS-Dienst) + Portfreigabe in der FritzBox | Die Host-App meldet DuckDNS selbst ihre aktuelle IP; die Adresse bleibt gleich, auch wenn Vodafone die IP wechselt |
+| Konto | kostenloses **Tailscale**-Konto (Personal-Tarif) | Funnel ist darin enthalten |
 | Android-Speicher | **DataStore** (Preferences) | |
 | Bildauswahl | Photo Picker (`ActivityResultContracts.PickVisualMedia`) | keine Speicherberechtigung nötig |
 | Android-WebRTC | **`io.getstream:stream-webrtc-android`** | siehe §2.2 |
@@ -141,18 +140,17 @@ erlaubt). Notfalls eigener schlanker Capturer (VirtualDisplay → `SurfaceTextur
 
 Bewusst schlicht – die Klassen werden im iPad verwaltet, nicht hier.
 
-- **Einrichtungsassistent:** DuckDNS-Subdomain und -Token eintragen, Anleitung zur FritzBox-Portfreigabe,
-  Akku-Einstellungen.
-- **Hauptbildschirm:** Schalter „Server läuft / gestoppt“, Status von DuckDNS (letzte IP-Meldung) und
-  Zertifikat (gültig bis …), Anzahl verbundener Geräte, Knopf **„Einladungslink für Lehrkraft“** (Link + QR).
+- **Einrichtungsassistent:** Tailscale-Auth-Key eintragen (Anleitung, wo man ihn im Tailscale-Adminbereich
+  erzeugt), Akku-Einstellungen.
+- **Hauptbildschirm:** Schalter „Server läuft / gestoppt“, öffentliche Adresse, Status „Von außen
+  erreichbar“, Anzahl verbundener Geräte, Knopf **„Einladungslink für Lehrkraft“** (Link + QR).
 - **`HostService`**: Foreground Service (Typ `specialUse`, für eine nicht über Google Play verteilte App
   unproblematisch) mit Benachrichtigung „Klassenserver läuft“ und „Stoppen“. Er hält
-  - den Ktor-Server auf Port **8443** (ohne Root nur Ports über 1024; die FritzBox leitet von außen 443 → 8443),
-  - die **DuckDNS-Aktualisierung** (alle 5 min und bei jedem Netzwechsel),
-  - den **Zertifikatsabruf und die Erneuerung** (Let's-Encrypt-Zertifikate gelten 90 Tage, Erneuerung nach ~60),
+  - den Ktor-Server auf `127.0.0.1:8080` (von außen nicht direkt erreichbar),
+  - den eingebetteten **Tailscale-Knoten** mit Funnel auf Port 443 und dem Reverse-Proxy zu Ktor,
   - einen `PARTIAL_WAKE_LOCK` und einen WLAN-Lock, damit das Handy bei ausgeschaltetem Display erreichbar bleibt.
 - **Web-App** wird beim Bauen aus `/web` erzeugt und in die APK gepackt.
-- **Daten** (Klassen, Profilbilder, DuckDNS-Token, Zertifikatsschlüssel) im App-eigenen Speicher, Backup
+- **Daten** (Klassen, Profilbilder, Tailscale-Zustand und -Schlüssel) im App-eigenen Speicher, Backup
   deaktiviert.
 
 ### 4.2 Server (`backend/server`)
@@ -193,7 +191,8 @@ MainActivity (Compose, edge-to-edge)
 ```
 
 - Ein gemeinsamer Service statt zwei: nur **ein** Symbol in der Statusleiste, das sein Aussehen wechselt.
-- Server-Adresse ist in der APK vorbelegt (deine DuckDNS-Adresse) und in den Einstellungen änderbar.
+- Server-Adresse wird beim Bauen vorbelegt (GitHub-Variable mit deiner `…ts.net`-Adresse) und ist in den
+  Einstellungen änderbar.
 - `minSdk` 29, `targetSdk` 35 (Pad 7: Android 15); Host-App zusätzlich gegen Android 16 getestet. Backups deaktiviert.
 - Profilbild wird auf dem Gerät auf max. 512 px verkleinert und als JPEG hochgeladen.
 - Keine Kamera- oder Mikrofonberechtigung (QR-Scannen fällt damit weg; Beitritt nur per Code).
@@ -202,69 +201,59 @@ MainActivity (Compose, edge-to-edge)
 
 ## 5. Netzwerk: S21 FE zuhause, Geräte in der Schule
 
-### 5.1 Wie die Schule das S21 FE erreicht
+### 5.1 Wie die Schule das S21 FE erreicht – Tailscale Funnel
 
-Die FritzBox leitet Anfragen auf Port 443 an das S21 FE weiter; DuckDNS sorgt für eine feste Adresse.
-Ob das bei deinem Vodafone-Anschluss geht, hängt von der Anschlussart ab:
+- Die Host-App startet einen eingebetteten Tailscale-Knoten namens `classview`. Er baut von sich aus eine
+  Verbindung zu Tailscale auf – wie jede App, die ins Internet geht. Am Router muss **nichts** eingestellt
+  werden; DS-Lite, wechselnde IP-Adressen und IPv6 spielen keine Rolle.
+- **Funnel** macht genau diesen Knoten unter `https://classview.<tailnet>.ts.net` öffentlich erreichbar.
+  Anfragen aus der Schule gehen an ein Tailscale-Relais, das sie als verschlüsselten TCP-Strom an das
+  S21 FE weiterreicht.
+- **TLS endet auf dem S21 FE.** `tsnet` holt dafür selbst ein gültiges Let's-Encrypt-Zertifikat. Tailscale
+  sieht Verbindungsdaten (wer, wann, wie viel), aber keine Inhalte.
+- Safari und die Schüler-App sehen ein normales, gültiges HTTPS-Zertifikat. **Auf dem iPad der Lehrerin
+  muss nichts installiert werden.**
+- Nur dieser eine Dienst ist freigegeben – nicht das Handy und nicht dein Heimnetz.
 
-| Heimanschluss | Weg | Geht? |
-|---|---|---|
-| **Öffentliche IPv4** („Dual Stack“, bei Vodafone-DSL üblich) | IPv4-Portfreigabe 443 → S21 FE:8443, DuckDNS-A-Eintrag | ja |
-| **DS-Lite** (bei Vodafone-Kabel üblich): von außen nur per IPv6 erreichbar | IPv6-Freigabe in der FritzBox für das S21 FE, DuckDNS-AAAA-Eintrag | nur wenn das **Schul-WLAN IPv6** hat |
-| DS-Lite **und** Schule ohne IPv6 | nicht direkt erreichbar | siehe §5.5 |
+**Einmalige Einrichtung im Tailscale-Adminbereich** (Details in Phase 3, alles im Browser am Handy machbar):
+MagicDNS und HTTPS-Zertifikate einschalten, Funnel für den Knoten erlauben (Eintrag in der
+Zugriffsrichtlinie, den die Admin-Oberfläche anbietet), einen Auth-Key erzeugen und in die Host-App
+kopieren.
 
-**Selbst prüfen:**
-- *FritzBox → Internet → Online-Monitor*: Steht dort „DS-Lite“, ist es DS-Lite. Steht dort eine normale
-  IPv4-Adresse ohne DS-Lite, hast du öffentliche IPv4. Faustregel: FritzBox-Modell **6**xxx = Kabel
-  (meist DS-Lite), **7**xxx = DSL (meist öffentliche IPv4).
-- *In der Schule*: auf dem Pad 7 im Schul-WLAN `test-ipv6.com` öffnen. Zeigt die Seite IPv6 als
-  funktionierend an, hat die Schule IPv6.
+### 5.2 Schulnetz: alle Geräte haben dieselbe öffentliche IP
 
-**FritzBox einrichten** (Details in Phase 3):
-*Internet → Freigaben → Portfreigaben → Gerät für Freigaben hinzufügen* → S21 FE wählen →
-„Diesem Gerät immer die gleiche IPv4-Adresse zuweisen“ → *Neue Freigabe → Portfreigabe*: TCP, Port am
-Gerät 8443, Port extern 443; je nach Anschluss „Freigabe für IPv4“ und/oder „IPv6“ aktivieren.
-(Ist in der FritzBox der MyFRITZ!-Fernzugang auf Port 443 aktiv, muss er auf einen anderen Port.)
-
-### 5.2 HTTPS mit echtem Zertifikat
-
-- Du legst bei **DuckDNS** (kostenlos, Anmeldung z. B. mit GitHub- oder Google-Konto) eine Subdomain an,
-  z. B. `meineklasse.duckdns.org`, und trägst Subdomain + Token in die Host-App ein.
-- Die Host-App holt bei **Let's Encrypt** ein Zertifikat. Den Nachweis, dass ihr die Domain gehört, liefert
-  sie über einen TXT-Eintrag bei DuckDNS (DNS-Prüfung) – Port 80 muss dafür nicht offen sein.
-- Ergebnis: Safari auf dem iPad und die Schüler-App sehen ein ganz normales, gültiges HTTPS-Zertifikat.
-  **Auf dem iPad der Lehrerin muss nichts installiert werden.**
-- Der private Schlüssel und das DuckDNS-Token verlassen das S21 FE nie.
-- Klartext-HTTP gibt es nur im Debug-Modus auf dem PC zum Entwickeln.
+Aus Sicht des Servers kommen alle Geräte der Schule von **einer** IP-Adresse. Rate-Limits dürfen deshalb
+nicht einfach „pro IP“ hart begrenzen, sonst sperrt sich die Klasse beim gemeinsamen Beitritt selbst aus.
+Regel: **fehlgeschlagene** Versuche pro IP streng begrenzen, erfolgreiche großzügig; zusätzlich Limits pro
+Code. **Zu prüfen in Phase 3:** ob `tsnet` bei Funnel-Verbindungen die echte Absender-IP liefert (dafür
+gibt es nach meinem Kenntnisstand eine eigene Verbindungs-Information); der Proxy reicht sie als
+`X-Forwarded-For` an Ktor weiter, Ktor vertraut diesem Header nur von `127.0.0.1`.
 
 ### 5.3 WebRTC: Video bleibt im Schul-WLAN
 
 Signalisierung (SDP, ICE) läuft über den Server zuhause, das Video selbst direkt Tablet → iPad im
-Schul-WLAN – du hast bestätigt, dass sich die Geräte dort gegenseitig erreichen. Dein Heimanschluss wird
-damit nicht belastet.
+Schul-WLAN – die Geräte erreichen sich dort gegenseitig. Funnel wird dafür nicht gebraucht (Funnel leitet
+ohnehin nur TCP/HTTPS weiter).
 
 **Zu prüfen in Phase 7:** Safari verrät ohne Kamera-/Mikrofonfreigabe seine lokale IP nicht. Für einen
 reinen Empfänger sollte die Verbindung trotzdem zustande kommen (Safari prüft die lokalen Adressen des
-Tablets, das Tablet lernt Safaris Adresse daraus). Falls nicht, ergänzen wir einen STUN-Server; welcher
-(eigener über die FritzBox-Freigabe auf UDP 3478 oder ein öffentlicher), entscheide ich dann anhand von
-Messungen.
+Tablets, das Tablet lernt Safaris Adresse daraus). Falls nicht, ergänzen wir einen öffentlichen
+STUN-Server (sieht nur IP-Adressen, keine Inhalte).
 
 ### 5.4 Was das im Alltag bedeutet
 
-- Das S21 FE muss zuhause **eingeschaltet, im WLAN und am Ladegerät** sein. Fällt es aus, oder fällt das
-  Internet zuhause aus, funktioniert ClassroomView in der Schule nicht.
+- Das S21 FE muss zuhause **eingeschaltet, im WLAN und am Ladegerät** sein. Fällt es aus, fällt das
+  Internet zuhause aus oder hat Tailscale eine Störung, funktioniert ClassroomView in der Schule nicht.
 - Das Schul-WLAN muss ausgehendes HTTPS (Port 443) erlauben – das ist praktisch immer so.
-- Die Entfernung (3 km) spielt keine Rolle; die Steuerdaten brauchen nur wenige Millisekunden.
+- Die Entfernung spielt keine Rolle; Funnel fügt ein paar Dutzend Millisekunden hinzu, für Steuerdaten
+  unerheblich.
 
-### 5.5 Falls der Anschluss von außen nicht erreichbar ist
-
-Nur relevant, wenn DS-Lite **und** die Schule kein IPv6 hat. Optionen, ehrlich bewertet:
+### 5.5 Plan B, falls Tailscale in der App nicht läuft
 
 | Option | Kosten | Bewertung |
 |---|---|---|
-| Vodafone nach öffentlicher IPv4 / „Dual Stack“ fragen | je nach Tarif 0 € | bei manchen Tarifen möglich, nicht garantiert |
-| Kostenlose Cloud-VM (z. B. Oracle Cloud „Always Free“) mit dem gleichen Server-Code | 0 € | zuverlässig, aber Registrierung verlangt eine Kreditkarte zur Prüfung |
-| Tunneldienst (z. B. Cloudflare Tunnel) | 0 € | Anbieter kann Steuerdaten, Namen und Profilbilder mitlesen; auf Android ohne Root nur über Umwege → nicht empfohlen |
+| Cloudflare Tunnel | 0 € + eigene Domain (ca. 5–15 €/Jahr) für eine feste Adresse | geht ebenfalls ohne Router; aber Cloudflare entschlüsselt den Verkehr (kann Namen, Bilder, Tokens sehen); `cloudflared` auf Android nur über Umwege |
+| Kostenlose Cloud-VM (z. B. Oracle „Always Free“) mit dem gleichen Server-Code | 0 € | zuverlässig; Registrierung verlangt eine Kreditkarte zur Prüfung |
 
 ---
 
@@ -442,17 +431,15 @@ Umschlag: `{ "type": "...", "id"?: "...", "data": { ... } }`. Ungültiges wird m
 sequenceDiagram
     autonumber
     participant U as Du (zuhause)
-    participant F as FritzBox
+    participant T as Tailscale-Adminbereich
     participant H as Host-App (S21 FE)
-    participant D as DuckDNS / Let's Encrypt
     participant L as iPad (Lehrerin)
     participant S as Schüler-App (Pad 7)
 
-    U->>D: DuckDNS-Subdomain anlegen, Token kopieren
-    U->>H: Subdomain + Token eintragen, Server starten
-    U->>F: Portfreigabe 443 → S21 FE:8443
-    H->>D: aktuelle IP melden, Zertifikat holen (DNS-Prüfung)
-    Note over H: https://meineklasse.duckdns.org erreichbar
+    U->>T: Konto anlegen, HTTPS + Funnel erlauben, Auth-Key erzeugen
+    U->>H: Auth-Key eintragen, Server starten
+    H->>T: Knoten „classview“ anmelden, Funnel auf 443 öffnen
+    Note over H: https://classview.….ts.net erreichbar,<br/>Zertifikat automatisch
     U->>L: Einladungslink aus der Host-App geben (Nachricht oder QR)
     L->>H: Link öffnen, zum Home-Bildschirm hinzufügen
     S->>S: HyperOS-Hinweise abarbeiten
@@ -567,7 +554,7 @@ sequenceDiagram
     Note over L,S: Zusätzlich beendet jede Seite lokal bei WebRTC „failed“<br/>oder wenn die Verbindung länger als 5 s „disconnected“ ist
 ```
 
-Wird die **Host-App** beendet, verliert das S21 FE das WLAN oder fällt das Internet zuhause aus, enden alle
+Wird die **Host-App** beendet, verliert das S21 FE das WLAN, fällt das Internet zuhause oder Tailscale aus, enden alle
 Streams auf beiden Seiten (beide verlieren den WebSocket).
 
 ---
@@ -649,7 +636,6 @@ WLAN-Lock. Zusätzlich (Menünamen prüfe ich in Phase 3 unter One UI 8):
    „Nicht verwendete Apps in Standby versetzen“ ggf. ausschalten.
 3. Dauerhaft **am Ladegerät** – dann greift der Android-Tiefschlaf (Doze) nicht. Optional in den
    Akku-Einstellungen „Akku schützen“ (Laden bis 80 %) einschalten, das schont den Akku im Dauerbetrieb.
-4. In der FritzBox dem S21 FE eine feste IP geben (siehe §5.1).
 
 Die Host-App zeigt diese Hinweise und fragt die Ausnahme von der Akku-Optimierung an
 (`ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`). Empfehlung: Auf dem S21 FE möglichst keine sensiblen
@@ -688,13 +674,11 @@ privaten Daten, weil der Server aus dem Internet erreichbar ist (siehe `security
 
 | Phase | Prüfpunkt | Plan B |
 |---|---|---|
-| vor 3 | Heimanschluss von außen erreichbar (IPv4 bzw. IPv6 + Schul-IPv6) | §5.5 |
-| 3 (zu Beginn) | Ktor-Netty mit TLS läuft auf Android | CIO lokal + eigener TLS-Vorschalter mit `SSLServerSocket` |
-| 3 | ACME-Client (Let's Encrypt) läuft auf Android | schlanke eigene ACME-Umsetzung |
-| 3 | IPv6-Weg: FritzBox-Freigabe bleibt gültig, obwohl Android seine IPv6-Adressen wechseln kann | Freigabe neu anlegen lassen / IPv4 bevorzugen |
+| 3 (ganz zu Beginn) | `tsnet` mit Funnel läuft eingebettet in einer Android-App (u. a. Netzwerkschnittstellen-Erkennung unter Android 16) | §5.5 |
+| 3 | Echte Absender-IP bei Funnel-Verbindungen verfügbar | Rate-Limits nur pro Code und global |
 | 3 | Hintergrundverhalten unter One UI 8 (Android 16) | Hinweise anpassen |
 | 4 | HyperOS-Menünamen, Benachrichtigungssymbole, `setColorized` | Hinweise anpassen |
-| 7 | Safari empfängt WebRTC ohne STUN | STUN ergänzen |
+| 7 | Safari empfängt WebRTC ohne STUN | öffentlichen STUN ergänzen |
 | 7 | `ScreenCapturerAndroid` und Größenänderung ab Android 14 | eigener Capturer |
 | 7 | Verhalten von HyperOS beim Sperren des Tablets während der Freigabe | Stream sauber beenden und anzeigen |
 
@@ -702,11 +686,7 @@ privaten Daten, weil der Server aus dem Internet erreichbar ist (siehe `security
 
 ## 14. Offene Fragen
 
-1. Was steht in der **FritzBox unter *Internet → Online-Monitor*** – „DS-Lite“ oder eine normale IPv4-Adresse?
-   Und welches FritzBox-Modell ist es (Nummer auf der Unterseite)?
-2. Nur falls DS-Lite: Zeigt **`test-ipv6.com`** auf dem Pad 7 **im Schul-WLAN** IPv6 als funktionierend an?
-3. Ist es für dich in Ordnung, bei **DuckDNS** eine kostenlose Adresse anzulegen (Anmeldung mit GitHub- oder
-   Google-Konto)?
+Keine. Tailscale-Konto wird von dir angelegt; die Einrichtung machen wir in Phase 3.
 
 **Annahmen**, falls nichts anderes gesagt wird: Oberflächen auf Deutsch; max. 40 Schüler pro Klasse; ein
 Stream gleichzeitig bis Phase 9.
