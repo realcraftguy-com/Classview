@@ -1,0 +1,667 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ClassroomView Lehrer-Mockups</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* Layout: App-Oberfläche wie auf dem iPad, darüber eine schmale Mockup-Leiste zum Umschalten der Bildschirme.
+   Farben = dieselben Werte wie android/core-ui/.../Theme.kt */
+:root {
+  --bg: #f4f5f7;
+  --surface: #ffffff;
+  --surface-muted: #eceef1;
+  --outline: #dcdfe4;
+  --text: #1b1d21;
+  --text-2: #686d76;
+  --accent: #2b6be4;
+  --on-accent: #ffffff;
+  --accent-soft: #e6eefd;
+  --online: #2f9e5c;
+  --offline: #a3a8b0;
+  --danger: #cc3d3d;
+  --danger-soft: #fbeaea;
+  --scrim: rgba(17, 18, 20, .42);
+  --shadow: 0 1px 2px rgba(20, 24, 32, .05), 0 4px 14px rgba(20, 24, 32, .05);
+  --stream-bg: #0e0f11;
+  --mock-bar: #ffffff;
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, "Segoe UI", Roboto, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --r-card: 20px;
+  --r-ctl: 14px;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111214; --surface: #1c1d20; --surface-muted: #26282c; --outline: #34373c;
+    --text: #edeef0; --text-2: #9a9fa8; --accent: #5b8ef0; --on-accent: #ffffff; --accent-soft: #1e2a40;
+    --online: #45b874; --offline: #6e737b; --danger: #e46a6a; --danger-soft: #3a2224;
+    --scrim: rgba(0, 0, 0, .55); --shadow: 0 1px 2px rgba(0,0,0,.4); --mock-bar: #1c1d20;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111214; --surface: #1c1d20; --surface-muted: #26282c; --outline: #34373c;
+  --text: #edeef0; --text-2: #9a9fa8; --accent: #5b8ef0; --on-accent: #ffffff; --accent-soft: #1e2a40;
+  --online: #45b874; --offline: #6e737b; --danger: #e46a6a; --danger-soft: #3a2224;
+  --scrim: rgba(0, 0, 0, .55); --shadow: 0 1px 2px rgba(0,0,0,.4); --mock-bar: #1c1d20;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; }
+body {
+  background: var(--bg); color: var(--text); font: 16px/1.45 var(--font);
+  -webkit-font-smoothing: antialiased; -webkit-tap-highlight-color: transparent;
+}
+button, input { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+h1, h2, h3 { margin: 0; text-wrap: balance; }
+p { margin: 0; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+/* ---------- Mockup-Leiste (nicht Teil der App) ---------- */
+.mockbar {
+  position: sticky; top: env(safe-area-inset-top, 0px); z-index: 50;
+  background: var(--mock-bar); border-bottom: 1px solid var(--outline);
+  padding-block: 10px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
+}
+.mockbar .label { font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--text-2); }
+.tabs { display: flex; gap: 6px; flex-wrap: wrap; flex: 1; min-width: 0; }
+.tab {
+  border: 1px solid var(--outline); background: transparent; border-radius: 999px;
+  padding: 6px 12px; font-size: 14px; color: var(--text-2);
+}
+.tab[aria-selected="true"] { background: var(--text); color: var(--bg); border-color: var(--text); }
+.theme-btn { border: 1px solid var(--outline); background: transparent; border-radius: 999px; padding: 6px 12px; font-size: 14px; }
+
+/* ---------- App-Gerüst ---------- */
+.screen { min-height: calc(100vh - 60px); position: relative; }
+.wrap {
+  max-width: 1180px; margin: 0 auto;
+  padding-block: 20px 48px;
+  padding-left: max(24px, env(safe-area-inset-left, 0px)); padding-right: max(24px, env(safe-area-inset-right, 0px));
+}
+.navbar { display: flex; align-items: center; gap: 12px; min-height: 52px; margin-bottom: 18px; }
+.navbar .grow { flex: 1; min-width: 0; }
+.back { display: inline-flex; align-items: center; gap: 4px; border: 0; background: none; color: var(--accent); font-size: 17px; padding: 10px 4px; }
+.large-title { font-size: 34px; font-weight: 700; letter-spacing: -.02em; }
+.subtitle { color: var(--text-2); }
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 48px; padding: 0 20px; border-radius: var(--r-ctl); border: 0;
+  font-weight: 600; font-size: 16px; white-space: nowrap;
+}
+.btn-primary { background: var(--accent); color: var(--on-accent); }
+.btn-tonal { background: var(--surface-muted); color: var(--text); }
+.btn-danger { background: var(--danger-soft); color: var(--danger); }
+.btn-plain { background: none; color: var(--accent); padding: 0 10px; }
+.btn[disabled] { opacity: .45; cursor: default; }
+.btn svg { width: 20px; height: 20px; }
+
+.card { background: var(--surface); border: 1px solid var(--outline); border-radius: var(--r-card); box-shadow: var(--shadow); }
+.eyebrow { font-size: 12px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--text-2); }
+.dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; flex: none; }
+.dot.on { background: var(--online); } .dot.off { background: var(--offline); } .dot.live { background: var(--accent); }
+
+.avatar { border-radius: 50%; overflow: hidden; flex: none; display: block; }
+.avatar svg { display: block; width: 100%; height: 100%; }
+
+/* ---------- Start ---------- */
+.class-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+.class-card { padding: 20px; display: grid; gap: 14px; text-align: left; color: inherit; }
+.class-card h3 { font-size: 20px; }
+.class-card .meta { display: flex; gap: 16px; color: var(--text-2); font-size: 15px; flex-wrap: wrap; }
+.class-card .faces { display: flex; }
+.class-card .faces .avatar { width: 32px; height: 32px; border: 2px solid var(--surface); margin-left: -8px; }
+.class-card .faces .avatar:first-child { margin-left: 0; }
+.code-mini { font-family: var(--mono); font-weight: 600; letter-spacing: .08em; color: var(--text); }
+.empty-hint { margin-top: 28px; color: var(--text-2); font-size: 14px; display: flex; gap: 8px; align-items: flex-start; max-width: 62ch; }
+
+/* ---------- Sheet ---------- */
+.scrim { position: absolute; inset: 0; background: var(--scrim); display: grid; place-items: center; padding: 24px; z-index: 10; }
+.sheet { width: min(560px, 100%); background: var(--surface); border-radius: 26px; box-shadow: 0 20px 60px rgba(0,0,0,.25); overflow: hidden; }
+.sheet-head { display: flex; align-items: center; padding: 14px 16px; border-bottom: 1px solid var(--outline); }
+.sheet-head h2 { flex: 1; text-align: center; font-size: 17px; }
+.sheet-body { padding: 22px; display: grid; gap: 20px; }
+.field { display: grid; gap: 8px; }
+.field label { font-size: 13px; font-weight: 600; color: var(--text-2); letter-spacing: .03em; }
+.input {
+  min-height: 50px; border-radius: var(--r-ctl); border: 1px solid var(--outline); background: var(--bg);
+  padding: 0 14px; width: 100%;
+}
+.hint { font-size: 13px; color: var(--text-2); }
+.segmented { display: grid; grid-template-columns: repeat(4, 1fr); background: var(--surface-muted); border-radius: 12px; padding: 3px; gap: 3px; }
+.segmented button { border: 0; background: none; border-radius: 9px; min-height: 40px; font-size: 14px; color: var(--text-2); }
+.segmented button[aria-pressed="true"] { background: var(--surface); color: var(--text); font-weight: 600; box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+
+/* ---------- Klassenansicht ---------- */
+.class-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 20px; align-items: end; margin-bottom: 22px; }
+.code-box { padding: 14px 16px 14px 22px; display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+.code-box .code { font-family: var(--mono); font-size: 34px; font-weight: 600; letter-spacing: .12em; font-variant-numeric: tabular-nums; }
+.code-box .code .sep { color: var(--offline); margin: 0 .1em; }
+.code-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.toolbar { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; flex-wrap: wrap; }
+.count { font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.count span { color: var(--text-2); font-weight: 400; }
+.search { margin-left: auto; position: relative; width: min(320px, 100%); }
+.search input { padding-left: 40px; background: var(--surface-muted); border-color: transparent; }
+.search svg { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); width: 18px; height: 18px; color: var(--text-2); }
+.banner {
+  display: flex; gap: 10px; align-items: center; padding: 12px 16px; border-radius: 14px;
+  background: var(--surface-muted); color: var(--text-2); margin-bottom: 16px; font-size: 15px;
+}
+.student-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(156px, 1fr)); gap: 14px; }
+.student {
+  padding: 20px 12px 16px; display: grid; justify-items: center; gap: 10px; text-align: center;
+  border: 1px solid var(--outline); background: var(--surface); border-radius: var(--r-card); box-shadow: var(--shadow);
+  position: relative; color: inherit;
+}
+.student .avatar { width: 76px; height: 76px; }
+.student.offline .avatar { filter: grayscale(.85); opacity: .55; }
+.student.live { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent), var(--shadow); }
+.student.live .avatar { box-shadow: 0 0 0 3px var(--surface), 0 0 0 5px var(--accent); }
+.student .name { font-weight: 600; font-size: 16px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.student .status { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; color: var(--text-2); }
+.student .status.live { color: var(--accent); font-weight: 600; }
+.student .flag {
+  position: absolute; top: 10px; right: 10px; font-size: 11px; font-weight: 600; padding: 3px 8px;
+  border-radius: 999px; background: var(--danger-soft); color: var(--danger);
+}
+.student .new { background: var(--accent-soft); color: var(--accent); }
+
+/* ---------- Code-Vollbild ---------- */
+.fullcode { position: absolute; inset: 0; background: var(--surface); display: grid; place-items: center; text-align: center; padding: 24px; z-index: 10; }
+.fullcode .close { position: absolute; top: 18px; right: max(18px, env(safe-area-inset-right, 0px)); }
+.fullcode .big {
+  font-family: var(--mono); font-weight: 600; font-size: clamp(64px, 14vw, 168px); letter-spacing: .12em;
+  line-height: 1; margin: 18px 0 26px; font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.fullcode .big .sep { color: var(--offline); }
+.fullcode .steps { color: var(--text-2); font-size: 20px; max-width: 34ch; margin: 0 auto; }
+.fullcode .live-count { margin-top: 34px; display: inline-flex; gap: 10px; align-items: center; padding: 10px 16px; border-radius: 999px; background: var(--surface-muted); font-weight: 600; }
+
+/* ---------- Detail ---------- */
+.detail-layout { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 20px; }
+.panel { padding: 28px; display: grid; justify-items: center; gap: 14px; text-align: center; align-content: start; }
+.panel .avatar { width: 120px; height: 120px; }
+.panel h2 { font-size: 26px; }
+.state-box { width: 100%; border-radius: 16px; padding: 16px; display: grid; gap: 6px; text-align: left; }
+.state-box.wait { background: var(--accent-soft); }
+.state-box.denied { background: var(--danger-soft); }
+.state-box.neutral { background: var(--surface-muted); }
+.state-box strong { display: flex; align-items: center; gap: 8px; }
+.state-box .hint { margin: 0; }
+.spinner { width: 16px; height: 16px; border-radius: 50%; border: 2.5px solid var(--accent); border-right-color: transparent; animation: spin .9s linear infinite; flex: none; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.panel .actions { width: 100%; display: grid; gap: 10px; }
+.state-picker { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; margin-top: 6px; }
+.state-picker button { border: 1px dashed var(--outline); background: none; border-radius: 999px; padding: 4px 10px; font-size: 13px; color: var(--text-2); }
+.state-picker button[aria-pressed="true"] { border-style: solid; border-color: var(--accent); color: var(--accent); }
+.info-list { padding: 8px 20px; }
+.info-row { display: flex; justify-content: space-between; gap: 16px; padding: 14px 0; border-bottom: 1px solid var(--outline); font-size: 15px; }
+.info-row:last-child { border-bottom: 0; }
+.info-row span:first-child { color: var(--text-2); }
+
+/* ---------- Stream ---------- */
+.stream { position: absolute; inset: 0; background: var(--stream-bg); display: grid; grid-template-rows: auto 1fr; z-index: 10; color: #fff; }
+.stream-bar {
+  display: flex; align-items: center; gap: 12px; padding-block: 12px;
+  padding-left: max(18px, env(safe-area-inset-left, 0px)); padding-right: max(18px, env(safe-area-inset-right, 0px));
+  background: rgba(255,255,255,.04); flex-wrap: wrap;
+}
+.stream-bar .who { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; font-weight: 600; }
+.stream-bar .avatar { width: 34px; height: 34px; }
+.live-pill { font-size: 12px; font-weight: 700; letter-spacing: .08em; padding: 3px 9px; border-radius: 999px; background: #2b6be4; color: #fff; }
+.stream-bar .timer { color: rgba(255,255,255,.6); font-weight: 400; font-variant-numeric: tabular-nums; }
+.stream .btn-ghost { background: rgba(255,255,255,.12); color: #fff; }
+.stream .btn-stop { background: #fff; color: #cc3d3d; }
+.stream-stage { display: grid; place-items: center; padding: 20px; min-height: 0; position: relative; }
+.remote {
+  width: min(100%, 1040px); aspect-ratio: 3200 / 2136; max-height: 100%; border-radius: 10px; overflow: hidden;
+  background: #f4f5f7; color: #1b1d21; display: grid; grid-template-columns: 26% 1fr; font-size: clamp(8px, 1.1vw, 13px);
+}
+.remote aside { background: #e9ebef; padding: 6% 7%; display: grid; gap: 6%; align-content: start; }
+.remote aside div { height: 1.6em; border-radius: 6px; background: #d6d9df; }
+.remote aside div.sel { background: #cfdcf8; }
+.remote main { padding: 5% 6%; display: grid; gap: 1.2em; align-content: start; }
+.remote h4 { margin: 0; font-size: 2em; }
+.remote pre { margin: 0; background: #1f2329; color: #d7dbe2; border-radius: 8px; padding: 1.2em 1.4em; font: 1.1em/1.6 var(--mono); overflow: hidden; }
+.remote pre b { color: #8fb4ff; font-weight: 400; } .remote pre i { color: #9fd3a8; font-style: normal; }
+.remote p { color: #555a63; font-size: 1.1em; }
+.paused {
+  position: absolute; inset: 20px; display: grid; place-items: center; text-align: center;
+  background: rgba(14,15,17,.82); border-radius: 10px; padding: 24px;
+}
+.paused p { color: rgba(255,255,255,.75); max-width: 40ch; margin-top: 8px; }
+.stream-note { font-size: 13px; color: rgba(255,255,255,.5); }
+
+/* ---------- Einstellungen ---------- */
+.settings { max-width: 720px; margin: 0 auto; display: grid; gap: 26px; }
+.group { padding: 4px 20px; }
+.row { display: flex; align-items: center; gap: 14px; min-height: 58px; border-bottom: 1px solid var(--outline); }
+.row:last-child { border-bottom: 0; }
+.row .grow { flex: 1; min-width: 0; }
+.row .grow small { display: block; color: var(--text-2); font-size: 13px; }
+.switch { width: 52px; height: 32px; border-radius: 999px; background: var(--surface-muted); border: 1px solid var(--outline); position: relative; flex: none; }
+.switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 24px; height: 24px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.25); transition: transform .2s; }
+.switch[aria-checked="true"] { background: var(--online); border-color: var(--online); }
+.switch[aria-checked="true"]::after { transform: translateX(20px); }
+.link-box { font-family: var(--mono); font-size: 13px; color: var(--text-2); overflow-wrap: anywhere; }
+.group-label { margin: 0 0 8px 6px; }
+
+/* ---------- schmal (Hochformat / Handy) ---------- */
+@media (max-width: 820px) {
+  .class-head { grid-template-columns: 1fr; }
+  .detail-layout { grid-template-columns: 1fr; }
+  .search { margin-left: 0; width: 100%; }
+  .large-title { font-size: 28px; }
+}
+@media (max-width: 480px) {
+  .code-box .code { font-size: 26px; }
+  .segmented { grid-template-columns: repeat(2, 1fr); }
+  .student-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+</style>
+</head>
+<body>
+
+<div class="mockbar" role="tablist" aria-label="Mockup-Bildschirme">
+  <span class="label">Mockup</span>
+  <div class="tabs" id="tabs"></div>
+  <button class="theme-btn" id="theme" type="button">Hell / Dunkel</button>
+</div>
+
+<!-- 1 · Start -->
+<section class="screen" data-screen="start" data-title="Start">
+  <div class="wrap">
+    <div class="navbar">
+      <div class="grow">
+        <div class="large-title">ClassroomView</div>
+      </div>
+      <button class="btn btn-primary" type="button" data-go="create">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+        Neue Klasse
+      </button>
+    </div>
+    <p class="eyebrow" style="margin: 0 0 12px 4px">Klassen auf diesem iPad</p>
+    <div class="class-list">
+      <button class="card class-card" type="button" data-go="class">
+        <h3>7b · Informatik</h3>
+        <div class="faces" data-faces="welle,sonne,blatt,mond,stern"></div>
+        <div class="meta"><span><span class="dot on"></span>&nbsp; 12 von 14 verbunden</span><span>Code <span class="code-mini">K7P·4XM</span></span></div>
+      </button>
+      <button class="card class-card" type="button" data-go="class">
+        <h3>9a · Mathematik</h3>
+        <div class="faces" data-faces="berg,wolke,planet"></div>
+        <div class="meta"><span><span class="dot off"></span>&nbsp; niemand verbunden</span><span>Code <span class="code-mini">Q3H·8RT</span></span></div>
+      </button>
+    </div>
+    <p class="empty-hint">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8v.01"/></svg>
+      Klassen werden nur auf diesem iPad gespeichert. Für ein anderes Gerät gibt es in den Klasseneinstellungen einen Wiederherstellungslink.
+    </p>
+  </div>
+</section>
+
+<!-- 2 · Neue Klasse -->
+<section class="screen" data-screen="create" data-title="Neue Klasse" hidden>
+  <div class="wrap" aria-hidden="true">
+    <div class="navbar"><div class="grow"><div class="large-title">ClassroomView</div></div></div>
+  </div>
+  <div class="scrim">
+    <div class="sheet" role="dialog" aria-labelledby="create-title">
+      <div class="sheet-head">
+        <button class="btn btn-plain" type="button" data-go="start">Abbrechen</button>
+        <h2 id="create-title">Neue Klasse</h2>
+        <button class="btn btn-plain" type="button" data-go="class" style="font-weight:700">Erstellen</button>
+      </div>
+      <div class="sheet-body">
+        <div class="field">
+          <label for="f-name">Klassenname</label>
+          <input class="input" id="f-name" value="7b · Informatik">
+        </div>
+        <div class="field">
+          <label for="f-teacher">Dein Name (optional)</label>
+          <input class="input" id="f-teacher" value="Frau Berger">
+          <p class="hint">Wird Schülern angezeigt, wenn du ihren Bildschirm sehen möchtest.</p>
+        </div>
+        <div class="field">
+          <label>Code läuft ab</label>
+          <div class="segmented" role="group" aria-label="Code läuft ab">
+            <button type="button" aria-pressed="false">Nie</button>
+            <button type="button" aria-pressed="false">1 Stunde</button>
+            <button type="button" aria-pressed="true">1 Tag</button>
+            <button type="button" aria-pressed="false">7 Tage</button>
+          </div>
+          <p class="hint">Bereits beigetretene Schüler bleiben verbunden, auch wenn der Code abläuft.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 3 · Klasse -->
+<section class="screen" data-screen="class" data-title="Klasse" hidden>
+  <div class="wrap">
+    <div class="navbar">
+      <button class="back" type="button" data-go="start">
+        <svg width="12" height="20" viewBox="0 0 12 20" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2 2 10l8 8"/></svg>
+        Klassen
+      </button>
+      <div class="grow"></div>
+      <button class="btn btn-plain" type="button" data-go="settings">Einstellungen</button>
+    </div>
+    <div class="class-head">
+      <div>
+        <h1 class="large-title">7b · Informatik</h1>
+        <p class="subtitle">Frau Berger</p>
+      </div>
+      <div class="card code-box">
+        <div>
+          <div class="eyebrow">Code</div>
+          <div class="code">K7P<span class="sep">·</span>4XM</div>
+        </div>
+        <div class="code-actions">
+          <button class="btn btn-tonal" type="button" id="copy-code">Kopieren</button>
+          <button class="btn btn-tonal" type="button">Erneuern</button>
+          <button class="btn btn-primary" type="button" data-go="code">Schüler hinzufügen</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="banner" id="offline-banner" hidden>
+      <span class="spinner"></span> Verbindung zum Server unterbrochen – wird wiederhergestellt …
+    </div>
+
+    <div class="toolbar">
+      <div class="count"><span class="dot on"></span>12 verbunden <span>von 14</span></div>
+      <button class="btn btn-plain" type="button" id="toggle-offline" style="min-height:36px;font-size:14px">Verbindungsabbruch zeigen</button>
+      <label class="search">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input class="input" id="search" placeholder="Schüler suchen" aria-label="Schüler suchen">
+      </label>
+    </div>
+
+    <div class="student-grid" id="grid"></div>
+  </div>
+</section>
+
+<!-- 4 · Code-Vollbild -->
+<section class="screen" data-screen="code" data-title="Code zeigen" hidden>
+  <div class="fullcode">
+    <button class="btn btn-tonal close" type="button" data-go="class">Fertig</button>
+    <div>
+      <div class="eyebrow" style="font-size:15px">7b · Informatik</div>
+      <div class="big">K7P<span class="sep">·</span>4XM</div>
+      <p class="steps">Öffne ClassroomView auf deinem Tablet, tippe auf „Klasse beitreten“ und gib diesen Code ein.</p>
+      <div class="live-count"><span class="dot on"></span> 14 Schüler beigetreten</div>
+    </div>
+  </div>
+</section>
+
+<!-- 5 · Schüler-Detail -->
+<section class="screen" data-screen="detail" data-title="Schüler" hidden>
+  <div class="wrap">
+    <div class="navbar">
+      <button class="back" type="button" data-go="class">
+        <svg width="12" height="20" viewBox="0 0 12 20" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2 2 10l8 8"/></svg>
+        7b · Informatik
+      </button>
+    </div>
+    <div class="detail-layout">
+      <div class="card panel">
+        <span class="avatar" data-avatar="welle" style="width:120px;height:120px"></span>
+        <h2>Felix</h2>
+        <p class="subtitle"><span class="dot on"></span>&nbsp; Online · seit 8:02</p>
+
+        <div class="state-box neutral" data-state="idle">
+          <strong>Keine Freigabe</strong>
+          <p class="hint">Felix wird gefragt und muss zustimmen. Danach fragt Android noch einmal.</p>
+        </div>
+        <div class="state-box wait" data-state="waiting" hidden>
+          <strong><span class="spinner"></span> Wartet auf Felix …</strong>
+          <p class="hint">Die Anfrage läuft in 0:48 ab.</p>
+        </div>
+        <div class="state-box denied" data-state="denied" hidden>
+          <strong>Abgelehnt</strong>
+          <p class="hint">Felix hat die Freigabe nicht erlaubt. Du kannst später erneut fragen.</p>
+        </div>
+        <div class="state-box neutral" data-state="expired" hidden>
+          <strong>Keine Antwort</strong>
+          <p class="hint">Die Anfrage ist nach 60 Sekunden abgelaufen.</p>
+        </div>
+        <div class="state-box wait" data-state="live" hidden>
+          <strong><span class="dot live"></span> Freigabe läuft · 2:14</strong>
+          <p class="hint">Nur du siehst den Bildschirm. Es wird nichts aufgezeichnet.</p>
+        </div>
+
+        <div class="actions">
+          <button class="btn btn-primary" type="button" data-action="request">Bildschirm ansehen</button>
+          <button class="btn btn-tonal" type="button" data-action="cancel" hidden>Anfrage zurückziehen</button>
+          <button class="btn btn-primary" type="button" data-action="open" data-go="stream" hidden>Vollbild öffnen</button>
+          <button class="btn btn-danger" type="button" data-action="stop" hidden>Freigabe beenden</button>
+        </div>
+        <div class="state-picker" role="group" aria-label="Zustand im Mockup">
+          <button type="button" data-pick="idle" aria-pressed="true">bereit</button>
+          <button type="button" data-pick="waiting" aria-pressed="false">wartet</button>
+          <button type="button" data-pick="denied" aria-pressed="false">abgelehnt</button>
+          <button type="button" data-pick="expired" aria-pressed="false">abgelaufen</button>
+          <button type="button" data-pick="live" aria-pressed="false">läuft</button>
+        </div>
+      </div>
+      <div>
+        <p class="eyebrow group-label">Gerät</p>
+        <div class="card info-list">
+          <div class="info-row"><span>Beigetreten</span><span>heute, 7:58</span></div>
+          <div class="info-row"><span>Verbindung</span><span>stabil</span></div>
+          <div class="info-row"><span>Letzte Freigabe</span><span>gestern, 10:41</span></div>
+        </div>
+        <div style="height:20px"></div>
+        <button class="btn btn-danger" type="button" style="width:100%">Aus der Klasse entfernen</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 6 · Stream -->
+<section class="screen" data-screen="stream" data-title="Live-Bildschirm" hidden>
+  <div class="stream">
+    <div class="stream-bar">
+      <div class="who">
+        <span class="avatar" data-avatar="welle"></span>
+        <span>Felix</span>
+        <span class="live-pill">LIVE</span>
+        <span class="timer">2:14</span>
+      </div>
+      <button class="btn btn-ghost" type="button" id="toggle-paused">„App nicht sichtbar“ zeigen</button>
+      <button class="btn btn-ghost" type="button" data-go="detail">Verkleinern</button>
+      <button class="btn btn-stop" type="button" data-go="detail">Beenden</button>
+    </div>
+    <div class="stream-stage">
+      <div class="remote" aria-label="Beispielbild des Schülerbildschirms">
+        <aside><div></div><div class="sel"></div><div></div><div></div><div></div></aside>
+        <main>
+          <h4>Aufgabe 3 · Schleifen</h4>
+          <p>Schreibe eine Schleife, die die Zahlen von 1 bis 10 addiert.</p>
+<pre><b>var</b> summe = <i>0</i>
+<b>for</b> i <b>in</b> <i>1</i>..<i>10</i> {
+    summe += i
+}
+print(summe)   <i>// 55</i></pre>
+        </main>
+      </div>
+      <div class="paused" id="paused" hidden>
+        <div>
+          <strong style="font-size:20px">Felix hat die geteilte App verlassen</strong>
+          <p>Felix teilt nur eine einzelne App. Sobald er zu ihr zurückkehrt, siehst du wieder das Bild.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 7 · Einstellungen -->
+<section class="screen" data-screen="settings" data-title="Einstellungen" hidden>
+  <div class="wrap">
+    <div class="navbar">
+      <button class="back" type="button" data-go="class">
+        <svg width="12" height="20" viewBox="0 0 12 20" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2 2 10l8 8"/></svg>
+        7b · Informatik
+      </button>
+    </div>
+    <div class="settings">
+      <h1 class="large-title">Einstellungen</h1>
+      <div>
+        <p class="eyebrow group-label">Beitreten</p>
+        <div class="card group">
+          <div class="row"><div class="grow">Beitritt pausieren<small>Der Code funktioniert vorübergehend nicht.</small></div><button class="switch" type="button" role="switch" aria-checked="false" aria-label="Beitritt pausieren"></button></div>
+          <div class="row"><div class="grow">Code läuft ab<small>morgen, 7:58</small></div><button class="btn btn-plain" type="button">Ändern</button></div>
+        </div>
+      </div>
+      <div>
+        <p class="eyebrow group-label">Auf einem anderen Gerät öffnen</p>
+        <div class="card group">
+          <div class="row"><div class="grow">Wiederherstellungslink<small class="link-box">https://classview.tail4b2c1.ts.net/#/recover/••••••••</small></div><button class="btn btn-plain" type="button">Kopieren</button></div>
+          <div class="row"><div class="grow">Link erneuern<small>Der alte Link funktioniert danach nicht mehr.</small></div><button class="btn btn-plain" type="button">Erneuern</button></div>
+        </div>
+        <p class="hint" style="margin:8px 6px 0">Wer diesen Link hat, kann die Klasse verwalten. Behandle ihn wie ein Passwort.</p>
+      </div>
+      <div>
+        <p class="eyebrow group-label">Angemeldete Lehrer-Geräte</p>
+        <div class="card group">
+          <div class="row"><div class="grow">iPad · Safari<small>dieses Gerät</small></div></div>
+          <div class="row"><div class="grow">Mac · Safari<small>zuletzt vor 3 Tagen</small></div><button class="btn btn-plain" type="button" style="color:var(--danger)">Abmelden</button></div>
+        </div>
+      </div>
+      <button class="btn btn-danger" type="button">Klasse löschen</button>
+    </div>
+  </div>
+</section>
+
+<script>
+let maskCount = 0;
+// Eingebaute Avatare – dieselben Formen wie android/core-ui/.../Avatar.kt (100×100-Raster).
+const AVATARS = {
+  welle:  ['#dce8fd', '#2b6be4', fg => `<path d="M18 42C28 32 38 32 50 42S72 52 82 42" fill="none" stroke="${fg}" stroke-width="7" stroke-linecap="round"/><path d="M18 60C28 50 38 50 50 60S72 70 82 60" fill="none" stroke="${fg}" stroke-opacity=".55" stroke-width="7" stroke-linecap="round"/>`],
+  berg:   ['#e1f0e6', '#2f7a4d', fg => `<path d="M14 72 40 34 66 72Z" fill="${fg}"/><path d="M46 72 64 46 86 72Z" fill="${fg}" fill-opacity=".6"/><path d="M33 44 40 34 47 44Z" fill="#fff" fill-opacity=".85"/>`],
+  sonne:  ['#fff0d4', '#db8f12', fg => `<circle cx="50" cy="50" r="15" fill="${fg}"/>` + [...Array(8)].map((_, i) => { const a = i * Math.PI / 4; return `<line x1="${50 + 23 * Math.cos(a)}" y1="${50 + 23 * Math.sin(a)}" x2="${50 + 31 * Math.cos(a)}" y2="${50 + 31 * Math.sin(a)}" stroke="${fg}" stroke-width="6" stroke-linecap="round"/>`; }).join('')],
+  mond:   ['#e8e5f9', '#5b4fc4', fg => { const id = 'm-mond-' + (++maskCount); return `<mask id="${id}"><rect width="100" height="100" fill="#fff"/><circle cx="62" cy="42" r="21" fill="#000"/></mask><circle cx="50" cy="50" r="24" fill="${fg}" mask="url(#${id})"/>`; }],
+  stern:  ['#fce6eb', '#cb4468', fg => `<path d="${[...Array(10)].map((_, i) => { const r = i % 2 ? 12 : 29, a = -Math.PI / 2 + i * Math.PI / 5; return (i ? 'L' : 'M') + (50 + r * Math.cos(a)).toFixed(1) + ' ' + (52 + r * Math.sin(a)).toFixed(1); }).join('')}Z" fill="${fg}"/>`],
+  blatt:  ['#e2f3ee', '#248a6e', fg => `<path d="M26 74C24 40 46 22 78 24 80 56 60 76 26 74Z" fill="${fg}"/><line x1="30" y1="70" x2="66" y2="36" stroke="#fff" stroke-opacity=".75" stroke-width="3.5" stroke-linecap="round"/>`],
+  wolke:  ['#e3f0f7', '#3580a3', fg => `<circle cx="37" cy="55" r="13" fill="${fg}"/><circle cx="53" cy="47" r="17" fill="${fg}"/><circle cx="67" cy="56" r="12" fill="${fg}"/><rect x="37" y="55" width="30" height="13" fill="${fg}"/>`],
+  planet: ['#f4e7da', '#ae6430', fg => `<circle cx="50" cy="50" r="17" fill="${fg}"/><ellipse cx="50" cy="50" rx="30" ry="8" fill="none" stroke="${fg}" stroke-opacity=".7" stroke-width="4.5"/><path d="M33 50a17 17 0 0 1 34 0Z" fill="${fg}"/>`],
+};
+function avatarSvg(key) {
+  const [bg, fg, draw] = AVATARS[key];
+  return `<svg viewBox="0 0 100 100" aria-hidden="true"><rect width="100" height="100" fill="${bg}"/>${draw(fg)}</svg>`;
+}
+function initialsSvg(name) {
+  return `<svg viewBox="0 0 100 100" aria-hidden="true"><rect width="100" height="100" fill="var(--surface-muted)"/><text x="50" y="50" dy=".35em" text-anchor="middle" font-size="42" font-weight="600" fill="var(--text-2)" font-family="-apple-system, system-ui, sans-serif">${name[0]}</text></svg>`;
+}
+document.querySelectorAll('[data-avatar]').forEach(el => { el.innerHTML = avatarSvg(el.dataset.avatar); });
+document.querySelectorAll('[data-faces]').forEach(el => {
+  el.innerHTML = el.dataset.faces.split(',').map(k => `<span class="avatar">${avatarSvg(k)}</span>`).join('');
+});
+
+// Beispielklasse (Mockup-Daten, keine echten Personen)
+const STUDENTS = [
+  { name: 'Felix', av: 'welle', st: 'live' },
+  { name: 'Amira', av: 'sonne', st: 'on' },
+  { name: 'Jonas', av: 'berg', st: 'on' },
+  { name: 'Lena', av: 'blatt', st: 'on', flag: 'Name doppelt' },
+  { name: 'Lena', av: 'stern', st: 'on', flag: 'Name doppelt' },
+  { name: 'Mats', av: 'wolke', st: 'on' },
+  { name: 'Sofia', av: null, st: 'on' },
+  { name: 'Emil', av: 'planet', st: 'on' },
+  { name: 'Hannah', av: 'mond', st: 'on' },
+  { name: 'Noah', av: 'sonne', st: 'on', isNew: true },
+  { name: 'Mia', av: 'berg', st: 'on' },
+  { name: 'Ben', av: 'welle', st: 'on' },
+  { name: 'Clara', av: 'blatt', st: 'off' },
+  { name: 'Yusuf', av: 'stern', st: 'off' },
+];
+const STATUS = { on: ['on', 'Online'], off: ['off', 'Offline'], live: ['live', 'Freigabe aktiv'] };
+function renderGrid(filter = '') {
+  const q = filter.trim().toLowerCase();
+  document.getElementById('grid').innerHTML = STUDENTS
+    .filter(s => s.name.toLowerCase().includes(q))
+    .map(s => {
+      const [dot, label] = STATUS[s.st];
+      const cls = s.st === 'off' ? 'offline' : s.st === 'live' ? 'live' : '';
+      const badge = s.flag ? `<span class="flag">${s.flag}</span>` : s.isNew ? `<span class="flag new">Neu</span>` : '';
+      return `<button type="button" class="student ${cls}" data-go="detail">${badge}
+        <span class="avatar">${s.av ? avatarSvg(s.av) : initialsSvg(s.name)}</span>
+        <span class="name">${s.name}</span>
+        <span class="status ${s.st === 'live' ? 'live' : ''}"><span class="dot ${dot}"></span>${label}</span>
+      </button>`;
+    }).join('');
+}
+renderGrid();
+document.getElementById('search').addEventListener('input', e => renderGrid(e.target.value));
+
+// Bildschirme umschalten
+const screens = [...document.querySelectorAll('[data-screen]')];
+const tabs = document.getElementById('tabs');
+tabs.innerHTML = screens.map(s => `<button class="tab" type="button" role="tab" data-tab="${s.dataset.screen}">${s.dataset.title}</button>`).join('');
+function show(name) {
+  screens.forEach(s => { s.hidden = s.dataset.screen !== name; });
+  tabs.querySelectorAll('.tab').forEach(t => t.setAttribute('aria-selected', String(t.dataset.tab === name)));
+  try { localStorage.setItem('cv-mock-screen', name); } catch (e) {}
+  window.scrollTo(0, 0);
+}
+document.addEventListener('click', e => {
+  const t = e.target.closest('[data-tab]');
+  if (t) return show(t.dataset.tab);
+  const go = e.target.closest('[data-go]');
+  if (go) show(go.dataset.go);
+});
+let start = 'start';
+try { start = localStorage.getItem('cv-mock-screen') || 'start'; } catch (e) {}
+const fromHash = location.hash.slice(1);
+show(screens.some(s => s.dataset.screen === fromHash) ? fromHash : (screens.some(s => s.dataset.screen === start) ? start : 'start'));
+addEventListener('hashchange', () => { const h = location.hash.slice(1); if (screens.some(s => s.dataset.screen === h)) show(h); });
+
+// Zustände im Schüler-Detail
+const ACTIONS = { idle: ['request'], waiting: ['cancel'], denied: ['request'], expired: ['request'], live: ['open', 'stop'] };
+function setState(st) {
+  document.querySelectorAll('[data-state]').forEach(b => { b.hidden = b.dataset.state !== st; });
+  document.querySelectorAll('[data-action]').forEach(b => { b.hidden = !ACTIONS[st].includes(b.dataset.action); });
+  document.querySelectorAll('[data-pick]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.pick === st)));
+}
+document.querySelectorAll('[data-pick]').forEach(b => b.addEventListener('click', () => setState(b.dataset.pick)));
+document.querySelector('[data-action="request"]').addEventListener('click', () => setState('waiting'));
+document.querySelector('[data-action="cancel"]').addEventListener('click', () => setState('idle'));
+document.querySelector('[data-action="stop"]').addEventListener('click', () => setState('idle'));
+
+// Kleinkram
+document.querySelectorAll('.segmented button').forEach(b => b.addEventListener('click', () => {
+  b.parentElement.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+}));
+document.querySelectorAll('.switch').forEach(s => s.addEventListener('click', () => s.setAttribute('aria-checked', String(s.getAttribute('aria-checked') !== 'true'))));
+document.getElementById('toggle-offline').addEventListener('click', () => {
+  const b = document.getElementById('offline-banner'); b.hidden = !b.hidden;
+});
+document.getElementById('toggle-paused').addEventListener('click', () => {
+  const p = document.getElementById('paused'); p.hidden = !p.hidden;
+});
+document.getElementById('copy-code').addEventListener('click', async e => {
+  const btn = e.currentTarget;
+  try { await navigator.clipboard.writeText('K7P4XM'); btn.textContent = 'Kopiert'; }
+  catch (err) { btn.textContent = 'K7P4XM'; }
+  setTimeout(() => { btn.textContent = 'Kopieren'; }, 1600);
+});
+document.getElementById('theme').addEventListener('click', () => {
+  const root = document.documentElement;
+  const dark = root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+  root.dataset.theme = dark ? 'light' : 'dark';
+});
+</script>
+</body>
+</html>

@@ -15,7 +15,7 @@ HTTPS-Zertifikat); das Video selbst bleibt im Schul-WLAN.
 | ClassroomView (Schüler-App) | Xiaomi Pad 7 (Schule) |
 | Lehrer-Web-App in Safari | iPad der Lehrerin (Schule) |
 
-> Status: **Phase 1 – Architektur abgeschlossen (Revision 4), Phase 2 – Mockups.**
+> Status: **Phase 2 – Mockups in Review** ([Übersicht](docs/mockups/README.md)).
 
 ## Repository-Struktur (geplant)
 
@@ -32,6 +32,7 @@ HTTPS-Zertifikat); das Video selbst bleibt im Schul-WLAN.
 
 - [`docs/architecture.md`](docs/architecture.md) – Komponenten, Technikwahl, Datenmodell, Protokoll, Ablaufdiagramme, Android-Besonderheiten
 - [`docs/security.md`](docs/security.md) – Sicherheitsmodell, Grenzen ohne Benutzerkonten, Checkliste
+- [`docs/mockups/README.md`](docs/mockups/README.md) – Mockups aller Bildschirme (Bilder)
 - [`docs/hosting-and-costs.md`](docs/hosting-and-costs.md) – Was wo läuft, Kosten, Erreichbarkeit, Einrichtung, Entwickeln ohne Handy
 
 ## Phasen
@@ -39,7 +40,7 @@ HTTPS-Zertifikat); das Video selbst bleibt im Schul-WLAN.
 | #  | Phase                                     | Status        |
 |----|-------------------------------------------|---------------|
 | 1  | Architektur                               | fertig        |
-| 2  | Mockups (HTML + Compose-Previews)         | in Arbeit     |
+| 2  | Mockups (HTML + Compose-Previews)         | in Review     |
 | 3  | Server + Host-App: Klassen, Codes, Tokens, Beitritt | offen |
 | 4  | Android-Basis: Profil, Avatar, Beitritt   | offen         |
 | 5  | Echtzeit-Schülerliste                     | offen         |
